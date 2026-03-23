@@ -8,9 +8,14 @@ import io
 import sqlite3
 import time
 
+# --- አዲስ የተጨመሩ (ለ UptimeRobot) ---
+from flask import Flask
+from threading import Thread
+import os
+
 # --- 1. የኮንፊገሬሽን መረጃዎች (የእርስዎን መረጃ እዚህ ይተኩ) ---
 TELEGRAM_TOKEN = '8206928325:AAHscx9ILS-NPqceYCK9GDcyS621EhuUTeM' # የቦት ፋዘር ቶከን
-GEMINI_API_KEY = 'AIzaSyDMkL7GBRkYKzHbH0LEYnQi7nLjXwpnF2E'     # የ Gemini ቁልፍ
+GEMINI_API_KEY = 'AIzaSyDMkL7GBRkYKzHbH0LEYnQi7nLjXwpnF2E'      # የ Gemini ቁልፍ
 CHANNEL_ID = "@digital_mat"                # የቴሌግራም ቻናልዎ
 
 genai.configure(api_key=GEMINI_API_KEY)
@@ -23,7 +28,7 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS exam_logs
                  (chat_id TEXT, subject TEXT, grade TEXT, exam_type TEXT,
-                  sets TEXT, timestamp TEXT)''')
+                 sets TEXT, timestamp TEXT)''')
     conn.commit()
     conn.close()
 
@@ -61,7 +66,7 @@ def start(message):
             f"ሰላም {user_name}! 👋\n\n"
             "ወደ መፍትሔ (Meftehe) Smart Bot እንኳን በደህና መጡ!\n"
             "⚠️ ይህን የ AI ረዳት ለመጠቀም፦ መጀመሪያ የቴሌግራም ቻናላችንን መቀላቀል ይኖርብዎታል።\n\n"
-            "👇 እባክዎን ከታች ያለውን ሊንክ ተጭነው Join ይበሉ፣ በመቀጠል '✅ Verify' የሚለውን ይጫኑ።"
+            "👇 እባክዎን ከታች ያለውን ሊንክ ተጭነው Join ይበሉ፣ በመቀጠል '✅ Verify' የሚለውን ይጫኑ。"
         )
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("📢 ቻናሉን ተቀላቀል (Join)", url=f"https://t.me/digital_mat"))
@@ -260,8 +265,25 @@ def generate_final_exam(message):
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ ፈተናውን በማዘጋጀት ላይ ስህተት ተፈጥሯል፦ {str(e)}")
 
+# --- 8. አዲስ የተጨመረ የ Flask ሞተር (ለ UptimeRobot) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Meftehe Bot is Online!"
+
+def run():
+    # Render የሚሰጠውን Port ካልሆነ ደግሞ 8080ን ይጠቀማል
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
 # --- ቦቱን ማስነሳት ---
 if __name__ == "__main__":
+    keep_alive() # ይህ ቦቱ እንዳይተኛ የሚቀሰቅሰው አዲሱ ኮድ ነው
     print("🚀 Meftehe Smart Bot is running securely...")
     bot.remove_webhook()
     bot.infinity_polling(skip_pending=True)
