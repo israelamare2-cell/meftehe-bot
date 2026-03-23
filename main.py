@@ -15,7 +15,7 @@ import os
 
 # --- 1. የኮንፊገሬሽን መረጃዎች (የእርስዎን መረጃ እዚህ ይተኩ) ---
 TELEGRAM_TOKEN = '8206928325:AAHscx9ILS-NPqceYCK9GDcyS621EhuUTeM' # የቦት ፋዘር ቶከን
-GEMINI_API_KEY = 'AIzaSyDMkL7GBRkYKzHbH0LEYnQi7nLjXwpnF2E'      # የ Gemini ቁልፍ
+GEMINI_API_KEY = 'AIzaSyCJMvgbdwBJyvX_gCZzJQ-T6Up4V2fadVc'      # የ Gemini ቁልፍ
 CHANNEL_ID = "@digital_mat"                # የቴሌግራም ቻናልዎ
 
 genai.configure(api_key=GEMINI_API_KEY)
