@@ -12,7 +12,7 @@ from flask import Flask
 
 # --- 1. ኮንፊገሬሽን ---
 # በ Render Environment Variables ውስጥ መግባታቸውን ያረጋግጡ
-TELEGRAM_TOKEN = os.getenv('8206928325:AAFsXtVkTMEK5WCai2N2bJ3Sb1GfcNbXyhk')
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 CHANNEL_ID = "@digital_mat"
 
