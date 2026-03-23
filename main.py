@@ -178,6 +178,28 @@ def final_generation_trigger(message):
 def generate_final_exam(message):
     chat_id = message.chat.id
     data = user_selection.get(chat_id)
+    bot.send_message(chat_id, "🚀 መጽሐፉን እያነበብኩ ነው... ጥቂት ሰከንዶች ይጠብቁ።")
+
+    # የፋይሉ ስም አወቃቀር
+    file_path = f"books/grade{data['grade']}_{data['subject'].lower()}.pdf"
+
+    try:
+        # 1. ፋይሉ በፎልደሩ ውስጥ መኖሩን ማረጋገጥ
+        if os.path.exists(file_path):
+            # ፋይሉን ወደ Gemini ሰርቨር መጫን
+            uploaded_file = genai.upload_file(path=file_path, display_name=f"Grade {data['grade']} {data['subject']}")
+            
+            # ፋይሉን እና የጽሁፍ ትዕዛዙን አዋህዶ መላክ
+            prompt = f"አያይዤ የላክሁልህን መጽሐፍ ተጠቀም። ከዚህ መጽሐፍ ውስጥ ብቻ ለክፍል {data['grade']} ተማሪዎች የሚሆን {data['type']} አዘጋጅ። ለእያንዳንዱ ጥያቄ መልሱ የሚገኝበትን ገጽ ቁጥር ጥቀስ።"
+            response = model.generate_content([uploaded_file, prompt])
+        else:
+            # ፋይሉ ካልተገኘ (Backup plan)
+            bot.send_message(chat_id, "⚠️ መጽሐፉን በፎልደሩ ውስጥ አላገኘሁትም፣ ስለዚህ በአጠቃላይ እውቀቴ እያዘጋጀሁ ነው...")
+            response = model.generate_content(f"Create a Grade {data['grade']} {data['subject']} {data['type']} based on Ethiopian Curriculum.")
+
+        content = response.text.replace("**", "").replace("*", "")
+        
+        # ... (ከዚህ በታች ያለው የ Word ዶክመንት ማዘጋጃ ኮድህ እንዳለ ይቀጥላል)
 
     bot.send_message(chat_id, "🚀 AIው ትዕዛዝዎን እየተነተነ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ (ይህ እንደ ጥያቄው ብዛት ሊዘገይ ይችላል)።")
 
