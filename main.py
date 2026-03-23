@@ -308,9 +308,20 @@ app = Flask('')
 def home():
     return "Meftehe Bot is Online!"
 
-def run():
-    # Render የሚሰጠውን Port ካልሆነ ደግሞ 8080ን ይጠቀማል
-    port = int(os.environ.get("PORT", 8080))
+def run_bot():
+    try:
+        bot.remove_webhook()
+        # skip_pending=True የቆዩ መልዕክቶችን በማለፍ ግጭትን ይከላከላል
+        bot.polling(none_stop=True, timeout=60, skip_pending=True)
+    except Exception as e:
+        print(f"Bot Polling Error: {e}")
+
+if __name__ == "__main__":
+    # 1. ቦቱን በሌላ thread ያስነሳል
+    threading.Thread(target=run_bot).start()
+    
+    # 2. Render የሚሰጠውን Port ይጠቀማል (Default ወደ 5000)
+    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
