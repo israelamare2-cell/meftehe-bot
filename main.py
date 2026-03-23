@@ -4,6 +4,8 @@ import google.generativeai as genai
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import os
+import google.generativeai as genai
 import io
 import sqlite3
 import time
@@ -178,6 +180,12 @@ def final_generation_trigger(message):
 def generate_final_exam(message):
     chat_id = message.chat.id
     data = user_selection.get(chat_id)
+    
+    # ተጠቃሚው መረጃው ከጠፋበት
+    if not data:
+        bot.send_message(chat_id, "⚠️ መረጃዎ ጠፍቷል፣ እባክዎ እንደገና /start ይበሉ።")
+        return
+
     bot.send_message(chat_id, "🚀 መጽሐፉን እያነበብኩ ነው... ጥቂት ሰከንዶች ይጠብቁ።")
 
     # የፋይሉ ስም አወቃቀር
@@ -200,7 +208,9 @@ def generate_final_exam(message):
         content = response.text.replace("**", "").replace("*", "")
         
         # ... (ከዚህ በታች ያለው የ Word ዶክመንት ማዘጋጃ ኮድህ እንዳለ ይቀጥላል)
-
+        
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ ፈተናውን በማዘጋጀት ላይ ስህተት ተፈጥሯል፦ {str(e)}")
     bot.send_message(chat_id, "🚀 AIው ትዕዛዝዎን እየተነተነ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ (ይህ እንደ ጥያቄው ብዛት ሊዘገይ ይችላል)።")
 
     try:
