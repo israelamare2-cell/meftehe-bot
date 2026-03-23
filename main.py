@@ -192,12 +192,10 @@ def home(): return "Meftehe Bot is Online!"
 
 def run_bot():
     try:
-        # መጀመሪያ ማንኛውንም የቆየ ግንኙነት ያፈርሳል
+        # የቆዩ ግንኙነቶችን ያጸዳል
         bot.remove_webhook()
-        # ለ 5 ሰከንድ ይጠብቃል (Render የድሮውን Instance እንዲዘጋ ጊዜ ይሰጠዋል)
-        import time
-        time.sleep(5)
-        # አዲሱን ግንኙነት ይጀምራል
-        bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=5)
+        print("🚀 Bot is starting to poll...")
+        # skip_pending=True የቆዩ መልዕክቶችን ችላ ብሎ አዲሶቹን ብቻ እንዲቀበል ያደርጋል
+        bot.infinity_polling(skip_pending=True, timeout=60)
     except Exception as e:
-        print(f"Bot Polling Error: {e}")
+        print(f"❌ Bot Polling Error: {e}")
