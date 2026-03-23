@@ -191,12 +191,13 @@ def generate_final_exam(message):
 def home(): return "Meftehe Bot is Online!"
 
 def run_bot():
-    bot.remove_webhook()
-    bot.infinity_polling(skip_pending=True)
-
-if __name__ == "__main__":
-    # ቦቱን በሌላ Thread
-    threading.Thread(target=run_bot, daemon=True).start()
-    # Flask ሰርቨር
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    try:
+        # መጀመሪያ ማንኛውንም የቆየ ግንኙነት ያፈርሳል
+        bot.remove_webhook()
+        # ለ 5 ሰከንድ ይጠብቃል (Render የድሮውን Instance እንዲዘጋ ጊዜ ይሰጠዋል)
+        import time
+        time.sleep(5)
+        # አዲሱን ግንኙነት ይጀምራል
+        bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=5)
+    except Exception as e:
+        print(f"Bot Polling Error: {e}")
