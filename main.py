@@ -9,17 +9,17 @@ import io
 import sqlite3
 import threading
 from flask import Flask
+import time
 
 # --- 1. ኮንፊገሬሽን ---
-# በ Render Environment Variables ውስጥ መግባታቸውን ያረጋግጡ
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 CHANNEL_ID = "@digital_mat"
 
-# Gemini Setup
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash') # ይበልጥ ፈጣን እና ለፋይል ተስማሚ ስሪት
+# ለፋይል ንባብ gemini-2.5-flash ይመረጣል (ፈጣን ነው)
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
@@ -36,12 +36,12 @@ def init_db():
 
 init_db()
 
-# --- 3. ዳታ እና ግሎባል ቫሪያብልስ ---
+# --- 3. ዳታ ---
 user_selection = {}
 ALL_SUBJECTS = ["Mathematics", "Physics", "Chemistry", "Biology", "General Science", "English", "Social Studies", "Citizenship", "Amharic", "Afaan Oromoo", "Environmental Science", "ግብረ ገብ", "PVA", "HPE", "CTE", "Economics", "IT"]
 ALL_ASSESSMENT_TYPES = ["Mid Exam", "Final Exam", "Worksheet", "Quiz", "National Prep", "Model Exam", "Test"]
 
-# --- 4. ረዳት ተግባራት (Force Join & Subs) ---
+# --- 4. ረዳት ተግባራት ---
 def is_subscribed(user_id):
     try:
         member = bot.get_chat_member(CHANNEL_ID, user_id)
@@ -49,7 +49,7 @@ def is_subscribed(user_id):
     except:
         return False
 
-# --- 5. የቦት ሜኑዎች (Commands & Callbacks) ---
+# --- 5. የቦት ሜኑዎች ---
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
@@ -130,7 +130,7 @@ def handle_callbacks(call):
         msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
-# --- 6. AI Generation (File API Integrated) ---
+# --- 6. AI Generation (Strict Book Policy) ---
 def final_generation_trigger(message):
     user_selection[message.chat.id]['tos_config'] = message.text
     generate_final_exam(message)
@@ -140,37 +140,41 @@ def generate_final_exam(message):
     data = user_selection.get(chat_id)
     if not data: return
 
-    bot.send_message(chat_id, "🚀 መጽሐፉን እያነበብኩና ፈተናውን እያዘጋጀሁ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ።")
+    # ፋይል የመፈለግ ሎጂክ (Case-insensitive check)
+    subject_filename = data['subject'].lower().replace(" ", "_")
+    file_path = f"books/grade{data['grade']}_{subject_filename}.pdf"
+    
+    # መጽሐፉ ከሌለ ፈተና አይመነጭም!
+    if not os.path.exists(file_path):
+        bot.send_message(chat_id, "❌ መፅሀፉ አልተገኘም! እባክዎ መፅሀፉን በ GitHub 'books/' ፎልደር ውስጥ ይጫኑ።")
+        return
 
-    # ፋይል የመፈለግ ሎጂክ
-    file_path = f"books/grade{data['grade']}_{data['subject'].lower()}.pdf"
+    bot.send_message(chat_id, "🚀 መጽሐፉን እያነበብኩና ፈተናውን እያዘጋጀሁ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ።")
     
     try:
-        # ቋንቋ መመሪያ
         grade_level = int(data['grade'])
         if grade_level <= 6 and data['subject'].lower() != "english":
-            lang_rule = "STRICTLY in AMHARIC. No English."
+            lang_rule = "STRICTLY in AMHARIC. No English words."
         else:
             lang_rule = "STRICTLY in ENGLISH."
 
-        # Prompt ማዘጋጀት
-        prompt = f"""Create a school exam: Subject:{data['subject']}, Grade:{data['grade']}, Type:{data['type']}, Difficulty:{data['diff']}, Bloom:{data['bloom']}, Sets:{data['num_sets']}, Config:{data['tos_config']}.
-        Rule: {lang_rule}. Provide TOS and Answer Key. Use '---PAGE BREAK---' as separator."""
+        prompt = f"""You are a senior Ethiopian examiner. Based ONLY on the attached PDF, create a {data['type']} for Grade {data['grade']} {data['subject']}.
+        Focus: {data['bloom']} level, Difficulty: {data['diff']}. 
+        Structure: {data['tos_config']}. 
+        Language: {lang_rule}. 
+        Generate {data['num_sets']} different sets. Shuffel questions and choices for each set.
+        Provide TOS first, then Sets, then Answer Key. Use '---PAGE BREAK---' as a separator."""
 
-        # ፋይሉ ካለ ከፋይሉ ጋር፣ ከሌለ በአጠቃላይ እውቀት
-        if os.path.exists(file_path):
-            uploaded_file = genai.upload_file(path=file_path)
-            response = model.generate_content([uploaded_file, prompt])
-        else:
-            response = model.generate_content(prompt)
+        # ፋይሉን ሰቅሎ ለ Gemini መስጠት
+        uploaded_file = genai.upload_file(path=file_path)
+        response = model.generate_content([uploaded_file, prompt])
 
         content = response.text.replace("**", "").replace("*", "")
         
-        # Word ማመንጫ
         doc = Document()
         style = doc.styles['Normal']
         style.font.name = 'Nyala'
-        doc.add_heading(f"{data['subject']} - Grade {data['grade']}", level=1)
+        doc.add_heading(f"{data['subject']} - Grade {data['grade']} Exam", level=1)
         
         for section in content.split("---PAGE BREAK---"):
             if section.strip():
@@ -180,30 +184,29 @@ def generate_final_exam(message):
         file_stream = io.BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
-        file_stream.name = f"{data['subject']}_Exam.docx"
-        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው በጥራት ተዘጋጅቷል!")
+        file_stream.name = f"{data['subject']}_Grade{data['grade']}.docx"
+        bot.send_document(chat_id, file_stream, caption=f"✅ የ {data['subject']} ፈተና ተዘጋጅቷል።")
 
     except Exception as e:
         bot.send_message(chat_id, f"❌ ስህተት ተፈጥሯል፦ {str(e)}")
 
-# --- 7. ሰርቨር እና ቦት ማስነሻ (Render Fix) ---
+# --- 7. ሰርቨር እና ቦት ማስነሻ ---
 @app.route('/')
 def home(): return "Meftehe Bot is Online!"
 
 def run_bot():
     try:
-        # የቆዩ ግንኙነቶችን ያጸዳል
         bot.remove_webhook()
+        time.sleep(2) # ግንኙነቱ እንዲረጋጋ
         print("🚀 Bot is starting to poll...")
-        # skip_pending=True የቆዩ መልዕክቶችን ችላ ብሎ አዲሶቹን ብቻ እንዲቀበል ያደርጋል
         bot.infinity_polling(skip_pending=True, timeout=60)
     except Exception as e:
         print(f"❌ Bot Polling Error: {e}")
 
 if __name__ == "__main__":
-    # 1. ቦቱን ከጀርባ (Background) ያስነሳዋል
+    # ቦቱን በሌላ Thread ያስነሳል
     threading.Thread(target=run_bot, daemon=True).start()
     
-    # 2. Render ሰርቨር "Live" እንዲል ያደርገዋል
-    port = int(os.environ.get("PORT", 5000))
+    # Flask ሰርቨር በ Render ፖርት ላይ ይከፍታል
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
