@@ -19,7 +19,7 @@ CHANNEL_ID = "@digital_mat"
 GITHUB_USER = "USER_NAME" 
 GITHUB_REPO = "REPO_NAME"
 RELEASE_TAG = "v1" # በ GitHub Release የሰጡት Tag name
-GITHUB_BASE_URL = f"https://github.com/{{GITHUB_USER}}/{{GITHUB_REPO}}/releases/download/{{RELEASE_TAG}}/"
+GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/"
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
