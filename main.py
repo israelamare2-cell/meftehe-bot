@@ -24,8 +24,8 @@ RELEASE_TAG = "v1"
 GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/"
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-# ማሳሰቢያ፡ gemini-2.5 ገና በሰፊው ስላልተለቀቀ ወደ አስተማማኙ 1.5-flash ቀይሬዋለሁ
-model = genai.GenerativeModel('gemini-1.5-flash')
+# ማሳሰቢያ፡ gemini-3.5 ገና በሰፊው ስላልተለቀቀ ወደ አስተማማኙ 2.5-flash ቀይሬዋለሁ
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
