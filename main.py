@@ -8,15 +8,23 @@ import sqlite3
 import threading
 from flask import Flask
 import time
+import requests
 
 # --- 1. ኮንፊገሬሽን ---
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 CHANNEL_ID = "@digital_mat"
 
+# !!! እዚህ ጋር የራስዎን የ GitHub መረጃ ያስገቡ !!!
+GITHUB_USER = "USER_NAME" 
+GITHUB_REPO = "REPO_NAME"
+RELEASE_TAG = "v1" # በ GitHub Release የሰጡት Tag name
+GITHUB_BASE_URL = f"https://github.com/{{GITHUB_USER}}/{{GITHUB_REPO}}/releases/download/{{RELEASE_TAG}}/"
+
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
+# ማሳሰቢያ፡ gemini-2.5 ገና በሰፊው ስላልተለቀቀ ወደ አስተማማኙ 1.5-flash ቀይሬዋለሁ
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
@@ -38,7 +46,8 @@ user_selection = {}
 ALL_SUBJECTS = ["Mathematics", "Physics", "Chemistry", "Biology", "General Science", "English", "Social Studies", "Citizenship", "Amharic", "Afaan Oromoo", "Environmental Science", "ግብረ ገብ", "PVA", "HPE", "CTE", "Economics", "IT"]
 ALL_ASSESSMENT_TYPES = ["Mid Exam", "Final Exam", "Worksheet", "Quiz", "National Prep", "Model Exam", "Test"]
 
-# --- 4. የደንበኝነት ማረጋገጫ (Force Join) ---
+# --- 4. ረዳት ፈንክሽኖች (Download & Subscription) ---
+
 def is_subscribed(user_id):
     try:
         member = bot.get_chat_member(CHANNEL_ID, user_id)
@@ -46,7 +55,34 @@ def is_subscribed(user_id):
     except:
         return False
 
+def download_book_from_github(grade, subject):
+    """ከ GitHub Release መፅሀፉን አውርዶ 'books/' ፎልደር ውስጥ ያስቀምጣል"""
+    if not os.path.exists("books"):
+        os.makedirs("books")
+    
+    # የፋይሉ ስም አወቃቀር፡ grade9_mathematics.pdf
+    subject_filename = subject.lower().replace(" ", "_")
+    filename = f"grade{grade}_{subject_filename}.pdf"
+    local_path = f"books/{filename}"
+    
+    if os.path.exists(local_path):
+        return local_path
+    
+    url = f"{GITHUB_BASE_URL}{filename}"
+    try:
+        response = requests.get(url, stream=True, timeout=20)
+        if response.status_code == 200:
+            with open(local_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return local_path
+        return None
+    except Exception as e:
+        print(f"Download error: {e}")
+        return None
+
 # --- 5. የቦት ሜኑዎች ---
+
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
@@ -59,7 +95,7 @@ def start(message):
         return
 
     user_selection[chat_id] = {'counts': {}}
-    welcome_msg = "🌟 **ወደ መፍትሔ (Meftehe) ስማርት የፈተና ማዘጋጃ ቦት በደህና መጡ!**\n\nለመጀመር ከታች ያለውን ይጫኑ።"
+    welcome_msg = "🌟 **ወደ መፍትሔ (Meftehe) ስማርት የፈተና ማዘጋጃ ቦት በደህና መጡ!**\n\nለመጀመር ከታች ያለውን ይጫኑ।"
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🚀 ጀምር", callback_data="main_menu"))
     bot.send_message(chat_id, welcome_msg, reply_markup=markup, parse_mode="Markdown")
@@ -128,6 +164,7 @@ def handle_callbacks(call):
         bot.register_next_step_handler(msg, final_generation_trigger)
 
 # --- 6. AI Generation (STRICT LaTeX & BOOK POLICY) ---
+
 def final_generation_trigger(message):
     user_selection[message.chat.id]['tos_config'] = message.text
     generate_final_exam(message)
@@ -137,33 +174,29 @@ def generate_final_exam(message):
     data = user_selection.get(chat_id)
     if not data: return
 
-    subject_filename = data['subject'].lower().replace(" ", "_")
-    file_path = f"books/grade{data['grade']}_{subject_filename}.pdf"
+    bot.send_message(chat_id, "🔍 መፅሀፉን ከ GitHub ማከማቻዬ እየፈለግኩ ነው...")
     
-    # መጽሐፉ ከሌለ ፈተና አይመነጭም (Strict Policy)
-    if not os.path.exists(file_path):
-        bot.send_message(chat_id, "❌ መፅሀፉ አልተገኘም! እባክዎ መፅሀፉን በ GitHub 'books/' ፎልደር ውስጥ ይጫኑ።")
+    # መፅሀፉን ከ GitHub Release ያወርዳል
+    file_path = download_book_from_github(data['grade'], data['subject'])
+    
+    if not file_path:
+        bot.send_message(chat_id, "❌ መፅሀፉ በ GitHub Release ላይ አልተገኘም! እባክዎ ፋይሉ በትክክለኛው ስም መጫኑን ያረጋግጡ።")
         return
 
-    bot.send_message(chat_id, "🚀 መጽሐፉን እያነበብኩና ፈተናውን እያዘጋጀሁ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ።")
+    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ፈተናውን እያዘጋጀሁ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ።")
     
     try:
         grade_level = int(data['grade'])
-        if grade_level <= 6 and data['subject'].lower() != "english":
-            lang_rule = "STRICTLY in AMHARIC."
-        else:
-            lang_rule = "STRICTLY in ENGLISH."
+        lang_rule = "STRICTLY in AMHARIC." if (grade_level <= 6 and data['subject'].lower() != "english") else "STRICTLY in ENGLISH."
 
-        # LaTeX እና የጥራት መመሪያዎች
         prompt = f"""You are a senior Ethiopian National Examiner.
         Based ONLY on the attached PDF, create a {data['type']} for Grade {data['grade']} {data['subject']}.
-        
         STRICT RULES:
         1. LANGUAGE: {lang_rule}
-        2. MATHEMATICAL NOTATION: ALL formulas, equations, fractions, variables (e.g., x, y), roots, and scientific symbols MUST be written in LaTeX format using $inline$ or $$display$$ syntax. NO PLAIN TEXT MATH.
+        2. MATHEMATICAL NOTATION: ALL formulas, equations, fractions, variables, and scientific symbols MUST be in LaTeX ($inline$ or $$display$$).
         3. SOURCE MATERIAL: Use ONLY the provided PDF. Focus on {data['bloom']} level, Difficulty: {data['diff']}.
-        4. STRUCTURE: Create {data['num_sets']} different sets. Shuffel questions and options. Config: {data['tos_config']}. 
-        5. FORMAT: Provide Table of Specifications (TOS), then the Exam Sets, then Answer Key. Use '---PAGE BREAK---' as a separator between sets."""
+        4. STRUCTURE: Create {data['num_sets']} different sets. Config: {data['tos_config']}. 
+        5. FORMAT: Provide TOS, then Exam Sets, then Answer Key. Use '---PAGE BREAK---' as a separator."""
 
         uploaded_file = genai.upload_file(path=file_path)
         response = model.generate_content([uploaded_file, prompt])
@@ -171,8 +204,6 @@ def generate_final_exam(message):
         content = response.text.replace("**", "").replace("*", "")
         
         doc = Document()
-        style = doc.styles['Normal']
-        style.font.name = 'Nyala'
         doc.add_heading(f"{data['subject']} - Grade {data['grade']} Exam", level=1)
         
         for section in content.split("---PAGE BREAK---"):
@@ -185,6 +216,9 @@ def generate_final_exam(message):
         file_stream.seek(0)
         file_stream.name = f"{data['subject']}_Grade{data['grade']}.docx"
         bot.send_document(chat_id, file_stream, caption=f"✅ ፈተናው በ LaTeX ቀመር ተዘጋጅቷል።")
+        
+        # የሬንደርን ስፔስ ላለመሙላት ፋይሉን እናጥፋው
+        # os.remove(file_path) 
 
     except Exception as e:
         bot.send_message(chat_id, f"❌ ስህተት ተፈጥሯል፦ {str(e)}")
