@@ -16,11 +16,12 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 CHANNEL_ID = "@digital_mat"
 
 # !!! እዚህ ጋር የራስዎን የ GitHub መረጃ ያስገቡ !!!
-GITHUB_USER = "USER_NAME" 
-GITHUB_REPO = "REPO_NAME"
-RELEASE_TAG = "v1" # በ GitHub Release የሰጡት Tag name
-GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/"
+GITHUB_USER = "israelamare2-cell"
+GITHUB_REPO = "meftehe-bot"
+RELEASE_TAG = "v1" 
 
+# ሊንኩን በዚህ መልኩ ቀይረው (f-string በትክክል መስራቱን አረጋግጥ)
+GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/"
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 # ማሳሰቢያ፡ gemini-2.5 ገና በሰፊው ስላልተለቀቀ ወደ አስተማማኙ 1.5-flash ቀይሬዋለሁ
