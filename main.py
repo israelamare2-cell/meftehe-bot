@@ -25,7 +25,7 @@ GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/down
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# Gemini 2.0 የሚባል የለም፤ ወደ 2.5 ተቀይሯል
+# በአንተ ምርጫ መሰረት ወደ gemini-2.5-flash ተቀይሯል
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -104,7 +104,6 @@ def handle_callbacks(call):
     chat_id = call.message.chat.id
     data = call.data
     
-    # Ensure chat_id exists in user_selection
     if chat_id not in user_selection:
         user_selection[chat_id] = {}
 
@@ -178,55 +177,47 @@ def generate_final_exam(message):
     data = user_selection.get(chat_id)
     if not data: return
 
-    bot.send_message(chat_id, "🔍 መፅሀፉን ከ GitHub ማከማቻዬ እየፈለግኩ ነው...")
+    bot.send_message(chat_id, "🔍 መፅሀፉን እየፈለግኩ ነው...")
     file_path = download_book_from_github(data['grade'], data['subject'])
     
     if not file_path:
-        bot.send_message(chat_id, "❌ መፅሀፉ በ GitHub Release ላይ አልተገኘም!")
+        bot.send_message(chat_id, "❌ መፅሀፉ አልተገኘም!")
         return
-
-    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! ፈተናውን እያዘጋጀሁ ነው...")
+        
+    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! በ Gemini 2.5 ፈተናውን እያዘጋጀሁ ነው...")
     
     try:
-        # 1. የቋንቋ ደንብ
         target_subject = data['subject'].lower()
         if target_subject == "afaan oromoo":
             lang_rule = "STRICTLY AND ONLY in Afaan Oromoo language."
         elif target_subject == "amharic":
             lang_rule = "STRICTLY AND ONLY in Amharic language."
         else:
-            lang_rule = "STRICTLY AND ONLY in English language."
+            grade_level = int(data['grade'])
+            lang_rule = "STRICTLY AND ONLY in AMHARIC." if grade_level <= 6 else "STRICTLY AND ONLY in ENGLISH."
 
-        # 2. የተስተካከለ እና ግጭት የሌለበት ትዕዛዝ (Prompt)
         prompt = f"""You are an elite National Examiner.
-        TASK: Create a {data['type']} for Grade {data['grade']} {data['subject']} based on the PDF.
-        FOCUS: Chapter {data['chapter']}, Difficulty: {data['diff']}.
-        
+        Create a {data['type']} for Grade {data['grade']} {data['subject']} using the PDF.
         RULES:
-        1. CONTENT: Generate exactly: {data['tos_config']}.
+        1. STRUCTURE: Create exactly: {data['tos_config']}.
         2. LANGUAGE: {lang_rule}
-        3. MATH NOTATION: Write fractions as 'a/b', exponents as 'x^2', and roots as 'sqrt(x)'. 
-           Do NOT use LaTeX dollar signs ($) as they mess up the Word document formatting.
-        4. NO FORMATTING: Do NOT use markdown tables (|), bold (**), or hashtags (#). 
-        5. STRUCTURE: Separate TOS, Exam, and Answer Key with '---PAGE BREAK---'.
-        """
+        3. FORMAT: No markdown tables, no bold (**), no hashtags (#).
+        4. MATH: Write as x^2, a/b, or sqrt(x). Do NOT use $ signs.
+        5. SECTIONS: Use '---PAGE BREAK---' to separate TOS, Exam, and Keys."""
 
-        # ሞዴሉን እዚህ ጋር gemini-2.5-flash ማድረጉን እርግጠኛ ይሁኑ
         uploaded_file = genai.upload_file(path=file_path)
+        # እዚህ ጋር global የሆነውን 2.5 ሞዴል ይጠቀማል
         response = model.generate_content([uploaded_file, prompt])
 
-        # 3. የጽሑፍ ማጽጃ (Regex) - ዶላር ሳይንን ጨምሮ አላስፈላጊ ምልክቶችን ያጠፋል
-        raw_content = response.text
-        # ሁሉንም አላስፈላጊ ምልክቶች በአንድ ላይ ማጽጃ
-        clean_content = re.sub(r'[#@&£*~|`$]', '', raw_content)
+        # ጽሑፉን የማጽዳት ሂደት
+        content = response.text
+        clean_content = re.sub(r'[#@&£*~|`$]', '', content)
         clean_content = clean_content.replace("**", "").replace("__", "")
 
-        # 4. ሰነዱን ማዘጋጀት
         doc = Document()
         doc.add_heading(f"{data['subject']} - Grade {data['grade']} Exam", level=1)
         
-        sections = clean_content.split("---PAGE BREAK---")
-        for section in sections:
+        for section in clean_content.split("---PAGE BREAK---"):
             if section.strip():
                 doc.add_paragraph(section.strip())
                 doc.add_page_break()
@@ -236,10 +227,10 @@ def generate_final_exam(message):
         file_stream.seek(0)
         file_stream.name = f"{data['subject']}_Grade{data['grade']}.docx"
         
-        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው በንጹህ አጻጻፍ ተዘጋጅቷል!")
+        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው በተሳካ ሁኔታ ተዘጋጅቷል!")
 
     except Exception as e:
-        bot.send_message(chat_id, f"❌ ስህተት ተፈጥሯል፦ {str(e)}")
+        bot.send_message(chat_id, f"❌ ስህተት፦ {str(e)}")
 
 # --- 7. Server & Launch ---
 @app.route('/')
