@@ -182,7 +182,7 @@ def generate_final_exam(message):
     try:
         target_subject = data['subject'].lower()
        if target_subject == "afaan oromoo":
-    lang_rule = "STRICTLY generate the exam content in Afaan Oromoo language. Ensure correct Qubee usage and educational terminology."
+    lang_rule = "STRICTLY in Afaan Oromoo language.only"
         elif target_subject == "amharic":
             lang_rule = "STRICTLY in Amharic language only."
         elif target_subject == "english":
