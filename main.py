@@ -180,9 +180,10 @@ def generate_final_exam(message):
     bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ፈተናውን እያዘጋጀሁ ነው...")
     
     try:
+        # ቋንቋዎችን የመለየት ስራ (እዚህ ጋር ነው ስህተት ተፈጥሮ የነበረው)
         target_subject = data['subject'].lower()
-       if target_subject == "afaan oromoo":
-    lang_rule = "STRICTLY in Afaan Oromoo language.only"
+        if target_subject == "afaan oromoo":
+            lang_rule = "STRICTLY in Afaan Oromoo language only."
         elif target_subject == "amharic":
             lang_rule = "STRICTLY in Amharic language only."
         elif target_subject == "english":
@@ -194,13 +195,12 @@ def generate_final_exam(message):
         prompt = f"""You are an expert Ethiopian National Examiner.
         STRICT COMPLIANCE REQUIRED:
         1. SOURCE: Use ONLY the provided PDF. Focus on Chapter: {data['chapter']}, Bloom Level: {data['bloom']}, Difficulty: {data['diff']}.
-        2. USER COMMAND: Create exactly what the teacher requested: {data['tos_config']}. Do not add extra questions.
+        2. USER COMMAND: Create exactly what the teacher requested: {data['tos_config']}.
         3. LANGUAGE: {lang_rule}
-        4. SYMBOLS & NOISE: REMOVE all unnecessary characters like #, @, &, $, £, *, or any markdown artifacts.
-        5. MATHEMATICS & SCIENCE: ALL formulas and symbols MUST be in LaTeX using $inline$ or $$display$$.
-        6. STRUCTURE: Generate {data['num_sets']} different sets. Provide TOS, Exam Sets, and Answer Key. Use '---PAGE BREAK---' as separator."""
+        4. SYMBOLS: ALL formulas and scientific notation MUST be in LaTeX using $inline$ or $$display$$.
+        5. STRUCTURE: Generate {data['num_sets']} different sets. Provide TOS, Exam Sets, and Answer Key. Use '---PAGE BREAK---' as separator."""
 
-        # አዲሱ እና የተስተካከለው የፋይል አሰቃቀል መንገድ
+        # ፋይሉን ለ Gemini 1.5 Flash በቀጥታ መላክ
         with open(file_path, "rb") as f:
             file_data = f.read()
         
