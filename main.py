@@ -11,7 +11,7 @@ from flask import Flask
 import time
 import requests
 
-# --- 1. ኮንፊገሬሽን ---
+# --- 1. Configuration ---
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 CHANNEL_ID = "@digital_mat"
@@ -25,13 +25,13 @@ GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/down
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# ሞዴሉን ወደ ስታንዳርድ ስም ቀይረነዋል
-model = genai.GenerativeModel('gemini-2.5-flash')
+# Gemini 2.5 የሚባል የለም፤ ወደ 1.5 ተቀይሯል
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
 
-# --- 2. ዳታቤዝ ---
+# --- 2. Database ---
 def init_db():
     conn = sqlite3.connect('meftehe_national_data.db', check_same_thread=False)
     c = conn.cursor()
@@ -43,12 +43,12 @@ def init_db():
 
 init_db()
 
-# --- 3. ዳታ ---
+# --- 3. Data Storage ---
 user_selection = {}
 ALL_SUBJECTS = ["Mathematics", "Physics", "Chemistry", "Biology", "General Science", "English", "Social Studies", "Citizenship", "Amharic", "Afaan Oromoo", "Environmental Science", "Moral Education", "PVA", "HPE", "CTE", "Agriculture", "Economics", "IT"]
 ALL_ASSESSMENT_TYPES = ["Mid Exam", "Final Exam", "Worksheet", "Quiz", "National Prep", "Model Exam", "Test"]
 
-# --- 4. ረዳት ፈንክሽኖች ---
+# --- 4. Helper Functions ---
 def is_subscribed(user_id):
     try:
         member = bot.get_chat_member(CHANNEL_ID, user_id)
@@ -80,11 +80,12 @@ def download_book_from_github(grade, subject):
         print(f"Download error: {e}")
         return None
 
-# --- 5. የቦት ሜኑዎች ---
+# --- 5. Bot Handlers ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    user_id = message.from_user.id
     chat_id = message.chat.id
+    user_id = message.from_user.id
+    
     if not is_subscribed(user_id):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("📢 ቻናሉን ተቀላቀል (Join)", url="https://t.me/digital_mat"))
@@ -93,7 +94,7 @@ def start(message):
         return
 
     user_selection[chat_id] = {'counts': {}}
-    welcome_msg = "🌟 **ወደ መፍትሔ (Meftehe) ስማርት የፈተና ማዘጋጃ ቦት በደህና መጡ!**\n\nለመጀመር ከታች ያለውን ይጫኑ।"
+    welcome_msg = "🌟 **ወደ መፍትሔ (Meftehe) ስማርት የፈተና ማዘጋጃ ቦት በደህና መጡ!**"
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🚀 ጀምር", callback_data="main_menu"))
     bot.send_message(chat_id, welcome_msg, reply_markup=markup, parse_mode="Markdown")
@@ -103,6 +104,10 @@ def handle_callbacks(call):
     chat_id = call.message.chat.id
     data = call.data
     
+    # Ensure chat_id exists in user_selection
+    if chat_id not in user_selection:
+        user_selection[chat_id] = {}
+
     if data == "check_subs":
         if is_subscribed(call.from_user.id): start(call.message)
         else: bot.answer_callback_query(call.id, "❌ አባል አይደሉም!", show_alert=True)
@@ -124,7 +129,7 @@ def handle_callbacks(call):
         user_selection[chat_id]['grade'] = data.split('_')[1]
         markup = types.InlineKeyboardMarkup(row_width=2)
         btns = [types.InlineKeyboardButton(t, callback_data=f"tp_{t}") for t in ALL_ASSESSMENT_TYPES]
-        markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"sub_{user_selection[chat_id]['subject']}"))
+        markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"sub_{user_selection[chat_id].get('subject', 'Mathematics')}"))
         bot.edit_message_text("📝 **የፈተና አይነት ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
 
     elif data.startswith('tp_'):
@@ -163,8 +168,10 @@ def handle_callbacks(call):
 
 # --- 6. AI Generation ---
 def final_generation_trigger(message):
-    user_selection[message.chat.id]['tos_config'] = message.text
-    generate_final_exam(message)
+    chat_id = message.chat.id
+    if chat_id in user_selection:
+        user_selection[chat_id]['tos_config'] = message.text
+        generate_final_exam(message)
 
 def generate_final_exam(message):
     chat_id = message.chat.id
@@ -181,7 +188,6 @@ def generate_final_exam(message):
     bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ንጹህ እና ፕሮፌሽናል ፈተና እያዘጋጀሁ ነው...")
     
     try:
-        # 1. የቋንቋ ደንብ
         target_subject = data['subject'].lower()
         if target_subject == "afaan oromoo":
             lang_rule = "STRICTLY AND ONLY in Afaan Oromoo language."
@@ -193,26 +199,19 @@ def generate_final_exam(message):
             grade_level = int(data['grade'])
             lang_rule = "STRICTLY AND ONLY in AMHARIC." if grade_level <= 6 else "STRICTLY AND ONLY in ENGLISH."
 
-        # 2. የ AI ትዕዛዝ
         prompt = f"""You are a senior National Examiner. 
         Create a {data['type']} for Grade {data['grade']} {data['subject']} based on the PDF.
-        
         STRICT FORMATTING RULES:
         1. NO DOLLAR SIGNS: Never use the '$' symbol.
-        2. STANDARD MATH NOTATION: Write fractions, powers, and exponents clearly.
-           - For Exponents: Use '^' (e.g., x^2).
-           - For Fractions: Use a slash (e.g., 3/4).
-           - For Roots: Use 'sqrt()'.
+        2. STANDARD MATH NOTATION: Write fractions, powers, and exponents clearly (e.g., x^2, 3/4).
         3. NO TABLES: Write the TOS as a clear, bulleted list.
         4. CLEAN TEXT: Do not use #, **, or any special symbols.
-        5. STRUCTURE: Create: {data['tos_config']}. Provide TOS, Exam Questions, and Answer Key.
-        
+        5. STRUCTURE: Create exactly: {data['tos_config']}. Provide TOS, Exam Questions, and Answer Key.
         Use '---PAGE BREAK---' only to separate sections."""
 
         uploaded_file = genai.upload_file(path=file_path)
         response = model.generate_content([uploaded_file, prompt])
 
-        # 3. የጽዳት ስራ
         content = response.text
         content = content.replace("$", "").replace("**", "").replace("#", "").replace("`", "")
 
@@ -234,7 +233,7 @@ def generate_final_exam(message):
     except Exception as e:
         bot.send_message(chat_id, f"❌ ስህተት፦ {str(e)}")
 
-# --- 7. ሰርቨር እና ቦት ማስነሻ ---
+# --- 7. Server & Launch ---
 @app.route('/')
 def home(): return "Meftehe Bot is Online!"
 
