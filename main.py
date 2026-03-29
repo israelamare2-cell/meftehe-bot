@@ -15,16 +15,15 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 CHANNEL_ID = "@digital_mat"
 
-# !!! እዚህ ጋር የራስዎን የ GitHub መረጃ ያስገቡ !!!
 GITHUB_USER = "israelamare2-cell"
 GITHUB_REPO = "meftehe-bot"
 RELEASE_TAG = "v1" 
 
-# ሊንኩን በዚህ መልኩ ቀይረው (f-string በትክክል መስራቱን አረጋግጥ)
 GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/"
+
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-# ማሳሰቢያ፡ gemini-3.5 ገና በሰፊው ስላልተለቀቀ ወደ አስተማማኙ 2.5-flash ቀይሬዋለሁ
+
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -47,8 +46,7 @@ user_selection = {}
 ALL_SUBJECTS = ["Mathematics", "Physics", "Chemistry", "Biology", "General Science", "English", "Social Studies", "Citizenship", "Amharic", "Afaan Oromoo", "Environmental Science", "Moral Education", "PVA", "HPE", "CTE", "Agriculture", "Economics", "IT"]
 ALL_ASSESSMENT_TYPES = ["Mid Exam", "Final Exam", "Worksheet", "Quiz", "National Prep", "Model Exam", "Test"]
 
-# --- 4. ረዳት ፈንክሽኖች (Download & Subscription) ---
-
+# --- 4. ረዳት ፈንክሽኖች ---
 def is_subscribed(user_id):
     try:
         member = bot.get_chat_member(CHANNEL_ID, user_id)
@@ -57,11 +55,9 @@ def is_subscribed(user_id):
         return False
 
 def download_book_from_github(grade, subject):
-    """ከ GitHub Release መፅሀፉን አውርዶ 'books/' ፎልደር ውስጥ ያስቀምጣል"""
     if not os.path.exists("books"):
         os.makedirs("books")
     
-    # የፋይሉ ስም አወቃቀር፡ grade9_mathematics.pdf
     subject_filename = subject.lower().replace(" ", "_")
     filename = f"grade{grade}_{subject_filename}.pdf"
     local_path = f"books/{filename}"
@@ -83,7 +79,6 @@ def download_book_from_github(grade, subject):
         return None
 
 # --- 5. የቦት ሜኑዎች ---
-
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
@@ -164,8 +159,7 @@ def handle_callbacks(call):
         msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
-# --- 6. AI Generation (STRICT LaTeX & BOOK POLICY) ---
-
+# --- 6. AI Generation (STRICT LANGUAGE & SYMBOL POLICY) ---
 def final_generation_trigger(message):
     user_selection[message.chat.id]['tos_config'] = message.text
     generate_final_exam(message)
@@ -176,33 +170,41 @@ def generate_final_exam(message):
     if not data: return
 
     bot.send_message(chat_id, "🔍 መፅሀፉን ከ GitHub ማከማቻዬ እየፈለግኩ ነው...")
-    
-    # መፅሀፉን ከ GitHub Release ያወርዳል
     file_path = download_book_from_github(data['grade'], data['subject'])
     
     if not file_path:
-        bot.send_message(chat_id, "❌ መፅሀፉ በ GitHub Release ላይ አልተገኘም! እባክዎ ፋይሉ በትክክለኛው ስም መጫኑን ያረጋግጡ።")
+        bot.send_message(chat_id, "❌ መፅሀፉ በ GitHub Release ላይ አልተገኘም!")
         return
 
-    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ፈተናውን እያዘጋጀሁ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ።")
+    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ጥያቄዎቹን እያዘጋጀሁ ነው...")
     
     try:
-        grade_level = int(data['grade'])
-        lang_rule = "STRICTLY in AMHARIC." if (grade_level <= 6 and data['subject'].lower() != "english") else "STRICTLY in ENGLISH."
+        # 1. የቋንቋ ደንብ ማስተካከያ (አፋን ኦሮሞ፣ አማርኛ እና እንግሊዝኛ)
+        target_subject = data['subject'].lower()
+        if target_subject == "afaan oromoo":
+            lang_rule = "STRICTLY in Afaan Oromoo language only."
+        elif target_subject == "amharic":
+            lang_rule = "STRICTLY in Amharic language only."
+        elif target_subject == "english":
+            lang_rule = "STRICTLY in English language only."
+        else:
+            grade_level = int(data['grade'])
+            lang_rule = "STRICTLY in AMHARIC." if grade_level <= 6 else "STRICTLY in ENGLISH."
 
-        prompt = f"""You are a senior Ethiopian National Examiner.
-        Based ONLY on the attached PDF, create a {data['type']} for Grade {data['grade']} {data['subject']}.
-        STRICT RULES:
-        1. LANGUAGE: {lang_rule}
-        2. MATHEMATICAL NOTATION: ALL formulas, equations, fractions, variables, and scientific symbols MUST be in LaTeX ($inline$ or $$display$$).
-        3. SOURCE MATERIAL: Use ONLY the provided PDF. Focus on {data['bloom']} level, Difficulty: {data['diff']}.
-        4. STRUCTURE: Create {data['num_sets']} different sets. Config: {data['tos_config']}. 
-        5. FORMAT: Provide TOS, then Exam Sets, then Answer Key. Use '---PAGE BREAK---' as a separator."""
+        prompt = f"""You are an expert Ethiopian National Examiner.
+        STRICT COMPLIANCE REQUIRED:
+        1. SOURCE: Use ONLY the provided PDF. Focus on Chapter: {data['chapter']}, Bloom Level: {data['bloom']}, Difficulty: {data['diff']}.
+        2. USER COMMAND: Create exactly what the teacher requested: {data['tos_config']}. Do not add extra questions.
+        3. LANGUAGE: {lang_rule}
+        4. SYMBOLS & NOISE: REMOVE all unnecessary characters like #, @, &, $, £, *, or any markdown artifacts except for structure.
+        5. MATHEMATICS & SCIENCE: ALL formulas, scientific symbols, variables, and equations MUST be written in high-quality standard LaTeX format using $inline$ or $$display$$ syntax.
+        6. STRUCTURE: Generate {data['num_sets']} different sets. Provide TOS, Exam Sets, and Answer Key. Use '---PAGE BREAK---' as separator."""
 
         uploaded_file = genai.upload_file(path=file_path)
         response = model.generate_content([uploaded_file, prompt])
 
-        content = response.text.replace("**", "").replace("*", "")
+        # አላስፈላጊ የ AI ምልክቶችን በኮድ ደረጃ ማጽዳት
+        content = response.text.replace("###", "").replace("##", "").replace("**", "")
         
         doc = Document()
         doc.add_heading(f"{data['subject']} - Grade {data['grade']} Exam", level=1)
@@ -216,10 +218,7 @@ def generate_final_exam(message):
         doc.save(file_stream)
         file_stream.seek(0)
         file_stream.name = f"{data['subject']}_Grade{data['grade']}.docx"
-        bot.send_document(chat_id, file_stream, caption=f"✅ ፈተናው በ LaTeX ቀመር ተዘጋጅቷል።")
-        
-        # የሬንደርን ስፔስ ላለመሙላት ፋይሉን እናጥፋው
-        # os.remove(file_path) 
+        bot.send_document(chat_id, file_stream, caption=f"✅ ፈተናው በጥብቅ መመሪያ ተዘጋጅቷል።")
 
     except Exception as e:
         bot.send_message(chat_id, f"❌ ስህተት ተፈጥሯል፦ {str(e)}")
@@ -232,7 +231,6 @@ def run_bot():
     try:
         bot.remove_webhook()
         time.sleep(2)
-        print("🚀 Bot is starting to poll...")
         bot.infinity_polling(skip_pending=True, timeout=60)
     except Exception as e:
         print(f"❌ Bot Polling Error: {e}")
