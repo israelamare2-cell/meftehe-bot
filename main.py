@@ -1,5 +1,4 @@
 import os
-import re
 import telebot
 from telebot import types
 import google.generativeai as genai
