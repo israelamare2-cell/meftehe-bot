@@ -47,13 +47,6 @@ ALL_SUBJECTS = ["Mathematics", "Physics", "Chemistry", "Biology", "General Scien
 ALL_ASSESSMENT_TYPES = ["Mid Exam", "Final Exam", "Worksheet", "Quiz", "National Prep", "Model Exam", "Test"]
 
 # --- 4. ረዳት ፈንክሽኖች ---
-def is_subscribed(user_id):
-    try:
-        member = bot.get_chat_member(CHANNEL_ID, user_id)
-        return member.status in ['member', 'administrator', 'creator']
-    except:
-        return True # ለሙከራ እንዲመችህ
-
 def download_book_from_github(grade, subject):
     if not os.path.exists("books"):
         os.makedirs("books")
@@ -78,7 +71,7 @@ def start(message):
     user_selection[chat_id] = {}
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🚀 ጀምር", callback_data="main_menu"))
-    bot.send_message(chat_id, "🌟 ወደ መፍትሔ ስማርት የፈተና ማዘጋጃ ቦት በደህና መጡ!", reply_markup=markup)
+    bot.send_message(chat_id, "🌟 እንኳን ደህና መጡ! ፈተና ለማዘጋጀት 'ጀምር'ን ይጫኑ።", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
@@ -105,60 +98,50 @@ def handle_callbacks(call):
         bot.edit_message_text("📝 የፈተና አይነት", chat_id, call.message.message_id, reply_markup=markup)
     elif data.startswith('tp_'):
         user_selection[chat_id]['type'] = data.split('_')[1]
-        msg = bot.send_message(chat_id, "🔢 የጥያቄ ብዛትና መዋቅር ይጻፉ\n(ምሳሌ፦ ምርጫ=10, እውነት/ሐሰት=5)")
-        bot.register_next_step_handler(msg, generate_final_exam)
+        msg = bot.send_message(chat_id, "🔢 የጥያቄ ብዛት ይጻፉ (ምሳሌ፡ ምርጫ=10, እውነት/ሐሰት=5)")
+        bot.register_next_step_handler(msg, process_generation)
+
+def process_generation(message):
+    chat_id = message.chat.id
+    user_selection[chat_id]['config'] = message.text
+    generate_final_exam(message)
 
 # --- 6. AI Generation ---
 def generate_final_exam(message):
     chat_id = message.chat.id
     data = user_selection.get(chat_id)
-    if not data: return
-
-    bot.send_message(chat_id, "🔍 መፅሀፉን ከ GitHub እየፈለግኩ ነው...")
+    bot.send_message(chat_id, "🔍 መፅሀፉን እየፈለግኩ ነው...")
     file_path = download_book_from_github(data['grade'], data['subject'])
     
     if not file_path:
-        bot.send_message(chat_id, "❌ መፅሀፉ አልተገኘም! እባክህ GitHub ላይ የፋይሉ ስም ትክክል መሆኑን አረጋግጥ።")
+        bot.send_message(chat_id, "❌ መፅሀፉ አልተገኘም!")
         return
 
-    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! ፈተናውን እያዘጋጀሁ ነው...")
+    bot.send_message(chat_id, "🚀 ፈተናው እየተዘጋጀ ነው...")
     
     try:
         grade = int(data['grade'])
         lang = "AMHARIC" if grade <= 6 else "ENGLISH"
+        prompt = f"Create a {data['type']} for Grade {data['grade']} {data['subject']} based on the PDF. Language: {lang}. Math in LaTeX. Config: {data['config']}"
         
-        prompt = f"""You are a strict Ethiopian National Examiner. Use ONLY the attached PDF.
-        Grade: {data['grade']}, Subject: {data['subject']}, Type: {data['type']}.
-        Config: {message.text}.
-        LANGUAGE: STRICTLY in {lang}.
-        MATH: All formulas MUST be in LaTeX ($inline$ or $$display$$).
-        CLEANLINESS: No hashtags (#) or bold stars (**). 
-        Divide TOS, Exam, and Keys with '---PAGE BREAK---'."""
-
         uploaded_file = genai.upload_file(path=file_path)
         response = model.generate_content([uploaded_file, prompt])
         
-        # ጽዳት
-        clean_text = re.sub(r'[#*@&]', '', response.text)
-        
         doc = Document()
         doc.add_heading(f"{data['subject']} Exam", 0)
-        for part in clean_text.split("---PAGE BREAK---"):
-            if part.strip():
-                doc.add_paragraph(part.strip())
-                doc.add_page_break()
-
+        doc.add_paragraph(response.text.replace("*", ""))
+        
         file_stream = io.BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
         file_stream.name = f"{data['subject']}_Exam.docx"
-        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው በተሳካ ሁኔታ ተዘጋጅቷል!")
+        bot.send_document(chat_id, file_stream)
     except Exception as e:
         bot.send_message(chat_id, f"❌ ስህተት፡ {str(e)}")
 
 # --- 7. ሰርቨር ---
 @app.route('/')
-def home(): return "Meftehe Bot is Online!"
+def home(): return "Meftehe Bot Online"
 
 def run_bot():
     bot.remove_webhook()
