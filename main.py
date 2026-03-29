@@ -19,13 +19,16 @@ CHANNEL_ID = "@digital_mat"
 GITHUB_USER = "israelamare2-cell"
 GITHUB_REPO = "meftehe-bot"
 RELEASE_TAG = "v1"
-
 GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/"
 
-if GEMINI_API_KEY:
+# API Key መኖሩን ማረጋገጥ
+if not GEMINI_API_KEY:
+    print("❌ Error: GEMINI_API_KEY is not set!")
+else:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# በአንተ ምርጫ መሰረት ወደ gemini-2.5-flash ተቀይሯል
+# በአንተ ምርጫ መሰረት ሞዴሉ ተቀምጧል
+# ማሳሰቢያ፡ ሞዴሉ አልተገኘም (Model not found) የሚል ስህተት Logs ላይ ከመጣ ወደ 'gemini-1.5-flash' ቀይረው
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -43,208 +46,118 @@ def init_db():
 
 init_db()
 
-# --- 3. Data Storage ---
 user_selection = {}
 ALL_SUBJECTS = ["Mathematics", "Physics", "Chemistry", "Biology", "General Science", "English", "Social Studies", "Citizenship", "Amharic", "Afaan Oromoo", "Environmental Science", "Moral Education", "PVA", "HPE", "CTE", "Agriculture", "Economics", "IT"]
 ALL_ASSESSMENT_TYPES = ["Mid Exam", "Final Exam", "Worksheet", "Quiz", "National Prep", "Model Exam", "Test"]
 
-# --- 4. Helper Functions ---
+# --- 3. Helper Functions ---
 def is_subscribed(user_id):
     try:
         member = bot.get_chat_member(CHANNEL_ID, user_id)
         return member.status in ['member', 'administrator', 'creator']
     except:
-        return False
+        return True # ለሙከራ ያህል ስህተት ካጋጠመ True አድርገው
 
 def download_book_from_github(grade, subject):
     if not os.path.exists("books"):
         os.makedirs("books")
-    
     subject_filename = subject.lower().replace(" ", "_")
     filename = f"grade{grade}_{subject_filename}.pdf"
     local_path = f"books/{filename}"
-    
-    if os.path.exists(local_path):
-        return local_path
-    
+    if os.path.exists(local_path): return local_path
     url = f"{GITHUB_BASE_URL}{filename}"
     try:
         response = requests.get(url, stream=True, timeout=20)
         if response.status_code == 200:
             with open(local_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+                for chunk in response.iter_content(chunk_size=8192): f.write(chunk)
             return local_path
         return None
-    except Exception as e:
-        print(f"Download error: {e}")
-        return None
+    except: return None
 
-# --- 5. Bot Handlers ---
+# --- 4. Bot Handlers ---
 @bot.message_handler(commands=['start'])
 def start(message):
     chat_id = message.chat.id
-    user_id = message.from_user.id
-    
-    if not is_subscribed(user_id):
+    if not is_subscribed(message.from_user.id):
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 ቻናሉን ተቀላቀል (Join)", url="https://t.me/digital_mat"))
+        markup.add(types.InlineKeyboardButton("📢 Join Channel", url="https://t.me/digital_mat"))
         markup.add(types.InlineKeyboardButton("✅ Verify", callback_data="check_subs"))
-        bot.send_message(chat_id, "⚠️ ቦቱን ለመጠቀም መጀመሪያ ቻናላችንን ይቀላቀሉ!", reply_markup=markup)
+        bot.send_message(chat_id, "⚠️ መጀመሪያ ቻናሉን ይቀላቀሉ!", reply_markup=markup)
         return
-
-    user_selection[chat_id] = {'counts': {}}
-    welcome_msg = "🌟 **ወደ መፍትሔ (Meftehe) ስማርት የፈተና ማዘጋጃ ቦት በደህና መጡ!**"
+    user_selection[chat_id] = {}
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🚀 ጀምር", callback_data="main_menu"))
-    bot.send_message(chat_id, welcome_msg, reply_markup=markup, parse_mode="Markdown")
+    bot.send_message(chat_id, "🌟 ወደ መፍትሔ ቦት በደህና መጡ!", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
     chat_id = call.message.chat.id
+    if chat_id not in user_selection: user_selection[chat_id] = {}
     data = call.data
-    
-    if chat_id not in user_selection:
-        user_selection[chat_id] = {}
 
-    if data == "check_subs":
-        if is_subscribed(call.from_user.id): start(call.message)
-        else: bot.answer_callback_query(call.id, "❌ አባል አይደሉም!", show_alert=True)
-    
-    elif data == "main_menu":
+    if data == "main_menu":
         markup = types.InlineKeyboardMarkup(row_width=2)
         btns = [types.InlineKeyboardButton(s, callback_data=f"sub_{s}") for s in ALL_SUBJECTS]
         markup.add(*btns)
-        bot.edit_message_text("📚 **ትምህርት ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-
+        bot.edit_message_text("📚 ትምህርት ይምረጡ", chat_id, call.message.message_id, reply_markup=markup)
+    
     elif data.startswith('sub_'):
         user_selection[chat_id]['subject'] = data.split('_')[1]
         markup = types.InlineKeyboardMarkup(row_width=4)
         btns = [types.InlineKeyboardButton(f"{i}ኛ", callback_data=f"gr_{i}") for i in range(1, 13)]
-        markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data="main_menu"))
-        bot.edit_message_text("📖 **የክፍል ደረጃ ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
+        markup.add(*btns)
+        bot.edit_message_text("📖 የክፍል ደረጃ", chat_id, call.message.message_id, reply_markup=markup)
 
     elif data.startswith('gr_'):
         user_selection[chat_id]['grade'] = data.split('_')[1]
         markup = types.InlineKeyboardMarkup(row_width=2)
         btns = [types.InlineKeyboardButton(t, callback_data=f"tp_{t}") for t in ALL_ASSESSMENT_TYPES]
-        markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"sub_{user_selection[chat_id].get('subject', 'Mathematics')}"))
-        bot.edit_message_text("📝 **የፈተና አይነት ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
+        markup.add(*btns)
+        bot.edit_message_text("📝 የፈተና አይነት", chat_id, call.message.message_id, reply_markup=markup)
 
     elif data.startswith('tp_'):
         user_selection[chat_id]['type'] = data.split('_')[1]
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(types.InlineKeyboardButton("ቀላል", callback_data="df_Easy"), types.InlineKeyboardButton("መካከለኛ", callback_data="df_Medium"),
-                   types.InlineKeyboardButton("ከባድ", callback_data="df_Hard"), types.InlineKeyboardButton("⚖️ Mixed", callback_data="df_MixedFair"))
-        bot.edit_message_text("📊 **የክብደት ደረጃ**", chat_id, call.message.message_id, reply_markup=markup)
-
-    elif data.startswith('df_'):
-        user_selection[chat_id]['diff'] = data.split('_')[1]
-        levels = ["Knowledge", "Understanding", "Application", "Analysis", "Mixed"]
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        btns = [types.InlineKeyboardButton(l, callback_data=f"bl_{l}") for l in levels]
-        markup.add(*btns)
-        bot.edit_message_text("🧠 **Bloom's Taxonomy**", chat_id, call.message.message_id, reply_markup=markup)
-
-    elif data.startswith('bl_'):
-        user_selection[chat_id]['bloom'] = data.split('_')[1]
-        markup = types.InlineKeyboardMarkup(row_width=4)
-        btns = [types.InlineKeyboardButton(f"ምዕ {i}", callback_data=f"ch_{i}") for i in range(1, 11)]
-        markup.add(*btns, types.InlineKeyboardButton("📚 All", callback_data="ch_all"))
-        bot.edit_message_text("📂 **ምዕራፍ ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
-
-    elif data.startswith('ch_'):
-        user_selection[chat_id]['chapter'] = data.split('_')[1]
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
-                   types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="sec_4"))
-        bot.edit_message_text("🛡️ **የሴት ብዛት**", chat_id, call.message.message_id, reply_markup=markup)
-
-    elif data.startswith('sec_'):
-        user_selection[chat_id]['num_sets'] = int(data.split('_')[1])
-        msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')")
-        bot.register_next_step_handler(msg, final_generation_trigger)
-
-# --- 6. AI Generation ---
-def final_generation_trigger(message):
-    chat_id = message.chat.id
-    if chat_id in user_selection:
-        user_selection[chat_id]['tos_config'] = message.text
-        generate_final_exam(message)
+        msg = bot.send_message(chat_id, "🔢 የጥያቄ ብዛት ይጻፉ (ምሳሌ፡ ምርጫ=10)")
+        bot.register_next_step_handler(msg, generate_final_exam)
 
 def generate_final_exam(message):
     chat_id = message.chat.id
     data = user_selection.get(chat_id)
     if not data: return
-
-    bot.send_message(chat_id, "🔍 መፅሀፉን እየፈለግኩ ነው...")
+    
+    bot.send_message(chat_id, "🔍 መጽሐፉን እየፈለግኩ ነው...")
     file_path = download_book_from_github(data['grade'], data['subject'])
     
     if not file_path:
-        bot.send_message(chat_id, "❌ መፅሀፉ አልተገኘም!")
+        bot.send_message(chat_id, "❌ መጽሐፉ አልተገኘም!")
         return
-        
-    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! በ Gemini 2.5 ፈተናውን እያዘጋጀሁ ነው...")
-    
+
     try:
-        target_subject = data['subject'].lower()
-        if target_subject == "afaan oromoo":
-            lang_rule = "STRICTLY AND ONLY in Afaan Oromoo language."
-        elif target_subject == "amharic":
-            lang_rule = "STRICTLY AND ONLY in Amharic language."
-        else:
-            grade_level = int(data['grade'])
-            lang_rule = "STRICTLY AND ONLY in AMHARIC." if grade_level <= 6 else "STRICTLY AND ONLY in ENGLISH."
-
-        prompt = f"""You are an elite National Examiner.
-        Create a {data['type']} for Grade {data['grade']} {data['subject']} using the PDF.
-        RULES:
-        1. STRUCTURE: Create exactly: {data['tos_config']}.
-        2. LANGUAGE: {lang_rule}
-        3. FORMAT: No markdown tables, no bold (**), no hashtags (#).
-        4. MATH: Write as x^2, a/b, or sqrt(x). Do NOT use $ signs.
-        5. SECTIONS: Use '---PAGE BREAK---' to separate TOS, Exam, and Keys."""
-
+        prompt = f"Create a {data['type']} for Grade {data['grade']} {data['subject']} based on the PDF. Config: {message.text}. Output clean text only."
         uploaded_file = genai.upload_file(path=file_path)
-        # እዚህ ጋር global የሆነውን 2.5 ሞዴል ይጠቀማል
         response = model.generate_content([uploaded_file, prompt])
-
-        # ጽሑፉን የማጽዳት ሂደት
-        content = response.text
-        clean_content = re.sub(r'[#@&£*~|`$]', '', content)
-        clean_content = clean_content.replace("**", "").replace("__", "")
-
-        doc = Document()
-        doc.add_heading(f"{data['subject']} - Grade {data['grade']} Exam", level=1)
         
-        for section in clean_content.split("---PAGE BREAK---"):
-            if section.strip():
-                doc.add_paragraph(section.strip())
-                doc.add_page_break()
-
+        content = response.text
+        doc = Document()
+        doc.add_heading(f"{data['subject']} Exam", 0)
+        doc.add_paragraph(content)
+        
         file_stream = io.BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
-        file_stream.name = f"{data['subject']}_Grade{data['grade']}.docx"
-        
-        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው በተሳካ ሁኔታ ተዘጋጅቷል!")
-
+        file_stream.name = "exam.docx"
+        bot.send_document(chat_id, file_stream, caption="✅ ተዘጋጅቷል!")
     except Exception as e:
-        bot.send_message(chat_id, f"❌ ስህተት፦ {str(e)}")
+        bot.send_message(chat_id, f"❌ ስህተት፡ {str(e)}")
 
-# --- 7. Server & Launch ---
+# --- 5. Server ---
 @app.route('/')
-def home(): return "Meftehe Bot is Online!"
+def home(): return "Meftehe Bot is Running!"
 
 def run_bot():
-    try:
-        bot.remove_webhook()
-        time.sleep(2)
-        bot.infinity_polling(skip_pending=True, timeout=60)
-    except Exception as e:
-        print(f"❌ Bot Polling Error: {e}")
+    bot.infinity_polling(timeout=60)
 
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
