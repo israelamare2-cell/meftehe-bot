@@ -18,13 +18,14 @@ CHANNEL_ID = "@digital_mat"
 
 GITHUB_USER = "israelamare2-cell"
 GITHUB_REPO = "meftehe-bot"
-RELEASE_TAG = "v1" 
+RELEASE_TAG = "v1"
 
 GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/"
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+# ሞዴሉን ወደ ስታንዳርድ ስም ቀይረነዋል
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -160,7 +161,7 @@ def handle_callbacks(call):
         msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
-# --- 6. AI Generation (STRICT LANGUAGE, SYMBOL & LaTeX POLICY) ---
+# --- 6. AI Generation ---
 def final_generation_trigger(message):
     user_selection[message.chat.id]['tos_config'] = message.text
     generate_final_exam(message)
@@ -179,8 +180,8 @@ def generate_final_exam(message):
         
     bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ንጹህ እና ፕሮፌሽናል ፈተና እያዘጋጀሁ ነው...")
     
-   try:
-        # 1. ጥብቅ የቋንቋ ደንብ
+    try:
+        # 1. የቋንቋ ደንብ
         target_subject = data['subject'].lower()
         if target_subject == "afaan oromoo":
             lang_rule = "STRICTLY AND ONLY in Afaan Oromoo language."
@@ -192,28 +193,27 @@ def generate_final_exam(message):
             grade_level = int(data['grade'])
             lang_rule = "STRICTLY AND ONLY in AMHARIC." if grade_level <= 6 else "STRICTLY AND ONLY in ENGLISH."
 
-        # 2. እጅግ ጥብቅ የሆነው ትዕዛዝ (The Clean Math Prompt)
+        # 2. የ AI ትዕዛዝ
         prompt = f"""You are a senior National Examiner. 
         Create a {data['type']} for Grade {data['grade']} {data['subject']} based on the PDF.
         
         STRICT FORMATTING RULES:
         1. NO DOLLAR SIGNS: Never use the '$' symbol.
-        2. STANDARD MATH NOTATION: Write fractions, powers, and exponents in a clear, standard way that looks good in Microsoft Word.
-           - For Exponents: Use the '^' symbol (e.g., x^2, 10^-3).
-           - For Fractions: Use a clear slash (e.g., 3/4, (x+1)/(x-2)).
-           - For Roots: Use 'sqrt()' or 'root' (e.g., sqrt(16)).
-        3. NO TABLES: Do not use '|' or '---' to draw tables. Write the TOS as a clear, bulleted list.
-        4. CLEAN TEXT: Do not use #, **, or any special symbols. Just plain, professional text.
-        5. STRUCTURE: Create exactly: {data['tos_config']}. Provide TOS, Exam Questions, and Answer Key.
+        2. STANDARD MATH NOTATION: Write fractions, powers, and exponents clearly.
+           - For Exponents: Use '^' (e.g., x^2).
+           - For Fractions: Use a slash (e.g., 3/4).
+           - For Roots: Use 'sqrt()'.
+        3. NO TABLES: Write the TOS as a clear, bulleted list.
+        4. CLEAN TEXT: Do not use #, **, or any special symbols.
+        5. STRUCTURE: Create: {data['tos_config']}. Provide TOS, Exam Questions, and Answer Key.
         
-        Use '---PAGE BREAK---' only to separate the TOS, Exam, and Answer Key."""
+        Use '---PAGE BREAK---' only to separate sections."""
 
         uploaded_file = genai.upload_file(path=file_path)
         response = model.generate_content([uploaded_file, prompt])
 
-        # 3. የጽዳት ስራ (ምልክቶችን የማጥፋት ስራ)
+        # 3. የጽዳት ስራ
         content = response.text
-        # የዶላር ምልክቶችን፣ ኮከቦችን እና ሌሎች አላስፈላጊ ነገሮችን ሙሉ በሙሉ ያጠፋል
         content = content.replace("$", "").replace("**", "").replace("#", "").replace("`", "")
 
         doc = Document()
@@ -221,8 +221,7 @@ def generate_final_exam(message):
         
         for section in content.split("---PAGE BREAK---"):
             if section.strip():
-                # ለፈተናው ጥያቄዎች ንጹህ አንቀጽ ይፈጥራል
-                p = doc.add_paragraph(section.strip())
+                doc.add_paragraph(section.strip())
                 doc.add_page_break()
 
         file_stream = io.BytesIO()
@@ -230,7 +229,7 @@ def generate_final_exam(message):
         file_stream.seek(0)
         file_stream.name = f"{data['subject']}_Grade{data['grade']}.docx"
         
-        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው ያለምንም የዶላር ምልክት፣ በንጹህ የሒሳብ አጻጻፍ ተዘጋጅቷል!")
+        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው በተሳካ ሁኔታ ተዘጋጅቷል!")
 
     except Exception as e:
         bot.send_message(chat_id, f"❌ ስህተት፦ {str(e)}")
