@@ -170,56 +170,64 @@ def generate_final_exam(message):
     data = user_selection.get(chat_id)
     if not data: return
 
-    bot.send_message(chat_id, "🔍 መፅሀፉን እየፈለግኩ ነው...")
+    bot.send_message(chat_id, "🔍 መፅሀፉን ከ GitHub ማከማቻዬ እየፈለግኩ ነው...")
     file_path = download_book_from_github(data['grade'], data['subject'])
     
     if not file_path:
-        bot.send_message(chat_id, "❌ መፅሀፉ አልተገኘም!")
+        bot.send_message(chat_id, "❌ መፅሀፉ በ GitHub Release ላይ አልተገኘም!")
         return
 
-    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ንጹህ እና ፕሮፌሽናል ፈተና እያዘጋጀሁ ነው...")
+    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ፈተናውን እጅግ ጥብቅ በሆነው መመሪያ መሰረት እያዘጋጀሁ ነው...")
     
     try:
-        # 1. የቋንቋ ደንብ
+        # 1. ጥብቅ የቋንቋ ደንብ
         target_subject = data['subject'].lower()
         if target_subject == "afaan oromoo":
-            lang_rule = "STRICTLY in Afaan Oromoo language only."
+            lang_rule = "STRICTLY AND ONLY in Afaan Oromoo language."
         elif target_subject == "amharic":
-            lang_rule = "STRICTLY in Amharic language only."
+            lang_rule = "STRICTLY AND ONLY in Amharic language."
+        elif target_subject == "english":
+            lang_rule = "STRICTLY AND ONLY in English language."
         else:
-            lang_rule = "STRICTLY in English language."
+            grade_level = int(data['grade'])
+            lang_rule = "STRICTLY AND ONLY in AMHARIC." if grade_level <= 6 else "STRICTLY AND ONLY in ENGLISH."
 
-        # 2. እጅግ ጥብቅ የሆነው ትዕዛዝ (The Clean Math Prompt)
-        prompt = f"""You are a senior National Examiner. 
-        Create a {data['type']} for Grade {data['grade']} {data['subject']} based on the PDF.
+        # 2. የማያፈናፍን የ AI ትዕዛዝ (Strong Prompt)
+        prompt = f"""You are an elite, strict Ethiopian National Examiner.
+        ABSOLUTE RULES (FAILURE IS NOT AN OPTION):
+        1. SOURCE & SCOPE: Use ONLY the provided PDF. Focus exactly on Chapter: {data['chapter']}, Bloom Level: {data['bloom']}, Difficulty: {data['diff']}.
+        2. TEACHER'S COMMAND: You MUST generate exactly what the teacher requested: {data['tos_config']}. Do not add or remove anything from this config.
+        3. LANGUAGE: {lang_rule} No mixing of languages.
+        4. MATHEMATICS & FORMULAS: ALL numbers, equations, fractions, variables, and scientific symbols MUST be written in strict LaTeX ($inline$ or $$display$$).
+        5. FORBIDDEN CHARACTERS: You are STRICTLY FORBIDDEN from using Markdown tables (|), hash tags (#), asterisks (*), or any of these symbols: @, &, $, £, %, ~, _, or bold/italic formatting. 
+        6. OUTPUT FORMAT: Output pure, clean text divided ONLY by '---PAGE BREAK---'. 
         
-        STRICT FORMATTING RULES:
-        1. NO DOLLAR SIGNS: Never use the '$' symbol.
-        2. STANDARD MATH NOTATION: Write fractions, powers, and exponents in a clear, standard way that looks good in Microsoft Word.
-           - For Exponents: Use the '^' symbol (e.g., x^2, 10^-3).
-           - For Fractions: Use a clear slash (e.g., 3/4, (x+1)/(x-2)).
-           - For Roots: Use 'sqrt()' or 'root' (e.g., sqrt(16)).
-        3. NO TABLES: Do not use '|' or '---' to draw tables. Write the TOS as a clear, bulleted list.
-        4. CLEAN TEXT: Do not use #, **, or any special symbols. Just plain, professional text.
-        5. STRUCTURE: Create exactly: {data['tos_config']}. Provide TOS, Exam Questions, and Answer Key.
+        YOU MUST USE THIS EXACT OUTPUT TEMPLATE:
         
-        Use '---PAGE BREAK---' only to separate the TOS, Exam, and Answer Key."""
+        Table of Specifications (TOS)
+        (Write the TOS as a simple plain text summary or bulleted list. NO TABLES ALLOWED.), Provide Exam Sets, and Answer Key sequentially.
+        """
 
         uploaded_file = genai.upload_file(path=file_path)
         response = model.generate_content([uploaded_file, prompt])
 
-        # 3. የጽዳት ስራ (ምልክቶችን የማጥፋት ስራ)
-        content = response.text
-        # የዶላር ምልክቶችን፣ ኮከቦችን እና ሌሎች አላስፈላጊ ነገሮችን ሙሉ በሙሉ ያጠፋል
-        content = content.replace("$", "").replace("**", "").replace("#", "").replace("`", "")
+        # 3. ጥብቅ የጽሑፍ ማጽጃ ኮድ (Strong Python Regex Cleaner)
+        # ይህ ኮድ AIው በስህተት ያመጣቸውን የትኛውንም አላስፈላጊ ምልክቶች በሀይል ይጠርጋል
+        raw_content = response.text
+        
+        # #, @, &, £, *, |, ~ ምልክቶችን ሙሉ በሙሉ ማጥፊያ (የ LaTeX ዶላር ሳይንን $ አይነካም)
+        clean_content = re.sub(r'[#@&£*~|]', '', raw_content)
+        
+        # የ Markdown ማድመቂያዎችን (Bold/Italic) ማጥፊያ
+        clean_content = clean_content.replace("**", "").replace("__", "")
 
+        # 4. ንፁሁን ጽሑፍ ወደ Word መቀየር
         doc = Document()
         doc.add_heading(f"{data['subject']} - Grade {data['grade']} Exam", level=1)
         
-        for section in content.split("---PAGE BREAK---"):
+        for section in clean_content.split("---PAGE BREAK---"):
             if section.strip():
-                # ለፈተናው ጥያቄዎች ንጹህ አንቀጽ ይፈጥራል
-                p = doc.add_paragraph(section.strip())
+                doc.add_paragraph(section.strip())
                 doc.add_page_break()
 
         file_stream = io.BytesIO()
@@ -227,10 +235,10 @@ def generate_final_exam(message):
         file_stream.seek(0)
         file_stream.name = f"{data['subject']}_Grade{data['grade']}.docx"
         
-        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው ያለምንም የዶላር ምልክት፣ በንጹህ የሒሳብ አጻጻፍ ተዘጋጅቷል!")
+        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው በተሰጠው ጥብቅ ትዕዛዝ መሰረት፣ ያለምንም አላስፈላጊ ምልክቶችና ንፁህ በሆነ የ LaTeX ፎርማት ተዘጋጅቷል!")
 
     except Exception as e:
-        bot.send_message(chat_id, f"❌ ስህተት፦ {str(e)}")
+        bot.send_message(chat_id, f"❌ ስህተት ተፈጥሯል፦ {str(e)}")
 
 # --- 7. ሰርቨር እና ቦት ማስነሻ ---
 @app.route('/')
