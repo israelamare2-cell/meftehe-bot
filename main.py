@@ -25,7 +25,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 # በአዲሱ ሞዴል ስሪት ተተክቷል
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
@@ -181,8 +181,8 @@ def generate_final_exam(message):
     
     try:
         target_subject = data['subject'].lower()
-        if target_subject == "afaan oromoo":
-            lang_rule = "STRICTLY in Afaan Oromoo language only."
+       if target_subject == "afaan oromoo":
+    lang_rule = "STRICTLY generate the exam content in Afaan Oromoo language. Ensure correct Qubee usage and educational terminology."
         elif target_subject == "amharic":
             lang_rule = "STRICTLY in Amharic language only."
         elif target_subject == "english":
