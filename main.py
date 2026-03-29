@@ -195,10 +195,8 @@ def generate_final_exam(message):
             lang_rule = "STRICTLY AND ONLY in Amharic language."
         elif target_subject == "english":
             lang_rule = "STRICTLY AND ONLY in English language."
-        else:
-            grade_level = int(data['grade'])
-            lang_rule = "STRICTLY AND ONLY in AMHARIC." if grade_level <= 6 else "STRICTLY AND ONLY in ENGLISH."
-
+        
+# 2. እጅግ ጥብቅ የሆነው ትዕዛዝ (The Clean Math Prompt)
         prompt = f"""You are a senior National Examiner. 
         Create a {data['type']} for Grade {data['grade']} {data['subject']} based on the PDF.
         STRICT FORMATTING RULES:
