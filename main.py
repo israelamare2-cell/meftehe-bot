@@ -1,4 +1,5 @@
 import os
+import re
 import telebot
 from telebot import types
 import google.generativeai as genai
@@ -159,7 +160,7 @@ def handle_callbacks(call):
         msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
-# --- 6. AI Generation (STRICT LANGUAGE & SYMBOL POLICY) ---
+# --- 6. AI Generation (STRICT LANGUAGE, SYMBOL & LaTeX POLICY) ---
 def final_generation_trigger(message):
     user_selection[message.chat.id]['tos_config'] = message.text
     generate_final_exam(message)
@@ -176,40 +177,50 @@ def generate_final_exam(message):
         bot.send_message(chat_id, "❌ መፅሀፉ በ GitHub Release ላይ አልተገኘም!")
         return
 
-    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ጥያቄዎቹን እያዘጋጀሁ ነው...")
+    bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ፈተናውን እጅግ ጥብቅ በሆነው መመሪያ መሰረት እያዘጋጀሁ ነው...")
     
     try:
-        # 1. የቋንቋ ደንብ ማስተካከያ (አፋን ኦሮሞ፣ አማርኛ እና እንግሊዝኛ)
+        # 1. ጥብቅ የቋንቋ ደንብ
         target_subject = data['subject'].lower()
         if target_subject == "afaan oromoo":
-            lang_rule = "STRICTLY in Afaan Oromoo language only."
+            lang_rule = "STRICTLY AND ONLY in Afaan Oromoo language."
         elif target_subject == "amharic":
-            lang_rule = "STRICTLY in Amharic language only."
+            lang_rule = "STRICTLY AND ONLY in Amharic language."
         elif target_subject == "english":
-            lang_rule = "STRICTLY in English language only."
+            lang_rule = "STRICTLY AND ONLY in English language."
         else:
             grade_level = int(data['grade'])
-            lang_rule = "STRICTLY in AMHARIC." if grade_level <= 6 else "STRICTLY in ENGLISH."
+            lang_rule = "STRICTLY AND ONLY in AMHARIC." if grade_level <= 6 else "STRICTLY AND ONLY in ENGLISH."
 
-        prompt = f"""You are an expert Ethiopian National Examiner.
-        STRICT COMPLIANCE REQUIRED:
-        1. SOURCE: Use ONLY the provided PDF. Focus on Chapter: {data['chapter']}, Bloom Level: {data['bloom']}, Difficulty: {data['diff']}.
-        2. USER COMMAND: Create exactly what the teacher requested: {data['tos_config']}. Do not add extra questions.
-        3. LANGUAGE: {lang_rule}
-        4. SYMBOLS & NOISE: REMOVE all unnecessary characters like #, @, &, $, £, *, or any markdown artifacts except for structure.
-        5. MATHEMATICS & SCIENCE: ALL formulas, scientific symbols, variables, and equations MUST be written in high-quality standard LaTeX format using $inline$ or $$display$$ syntax.
-        6. STRUCTURE: Generate {data['num_sets']} different sets. Provide TOS, Exam Sets, and Answer Key. Use '---PAGE BREAK---' as separator."""
+        # 2. የማያፈናፍን የ AI ትዕዛዝ (Strong Prompt)
+        prompt = f"""You are an elite, strict Ethiopian National Examiner.
+        ABSOLUTE RULES (FAILURE IS NOT AN OPTION):
+        1. SOURCE & SCOPE: Use ONLY the provided PDF. Focus exactly on Chapter: {data['chapter']}, Bloom Level: {data['bloom']}, Difficulty: {data['diff']}.
+        2. TEACHER'S COMMAND: You MUST generate exactly what the teacher requested: {data['tos_config']}. Do not add or remove anything from this config.
+        3. LANGUAGE: {lang_rule} No mixing of languages.
+        4. MATHEMATICS & FORMULAS: ALL numbers, equations, fractions, variables, and scientific symbols MUST be written in strict LaTeX ($inline$ or $$display$$).
+        5. FORBIDDEN CHARACTERS: You are STRICTLY FORBIDDEN from using Markdown tables (|), hash tags (#), asterisks (*), or any of these symbols: @, &, $, £, %, ~, _, or bold/italic formatting. 
+        6. OUTPUT FORMAT: Output pure, clean text divided ONLY by '---PAGE BREAK---'. Provide TOS, Exam Sets, and Answer Key sequentially.
+        """
 
         uploaded_file = genai.upload_file(path=file_path)
         response = model.generate_content([uploaded_file, prompt])
 
-        # አላስፈላጊ የ AI ምልክቶችን በኮድ ደረጃ ማጽዳት
-        content = response.text.replace("###", "").replace("##", "").replace("**", "")
+        # 3. ጥብቅ የጽሑፍ ማጽጃ ኮድ (Strong Python Regex Cleaner)
+        # ይህ ኮድ AIው በስህተት ያመጣቸውን የትኛውንም አላስፈላጊ ምልክቶች በሀይል ይጠርጋል
+        raw_content = response.text
         
+        # #, @, &, £, *, |, ~ ምልክቶችን ሙሉ በሙሉ ማጥፊያ (የ LaTeX ዶላር ሳይንን $ አይነካም)
+        clean_content = re.sub(r'[#@&£*~|]', '', raw_content)
+        
+        # የ Markdown ማድመቂያዎችን (Bold/Italic) ማጥፊያ
+        clean_content = clean_content.replace("**", "").replace("__", "")
+
+        # 4. ንፁሁን ጽሑፍ ወደ Word መቀየር
         doc = Document()
         doc.add_heading(f"{data['subject']} - Grade {data['grade']} Exam", level=1)
         
-        for section in content.split("---PAGE BREAK---"):
+        for section in clean_content.split("---PAGE BREAK---"):
             if section.strip():
                 doc.add_paragraph(section.strip())
                 doc.add_page_break()
@@ -218,7 +229,8 @@ def generate_final_exam(message):
         doc.save(file_stream)
         file_stream.seek(0)
         file_stream.name = f"{data['subject']}_Grade{data['grade']}.docx"
-        bot.send_document(chat_id, file_stream, caption=f"✅ ፈተናው በጥብቅ መመሪያ ተዘጋጅቷል።")
+        
+        bot.send_document(chat_id, file_stream, caption="✅ ፈተናው በተሰጠው ጥብቅ ትዕዛዝ መሰረት፣ ያለምንም አላስፈላጊ ምልክቶችና ንፁህ በሆነ የ LaTeX ፎርማት ተዘጋጅቷል!")
 
     except Exception as e:
         bot.send_message(chat_id, f"❌ ስህተት ተፈጥሯል፦ {str(e)}")
