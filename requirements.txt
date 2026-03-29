@@ -1,5 +1,6 @@
 pyTelegramBotAPI
 google-generativeai
-Flask
 python-docx
+requests
+Flask
 gunicorn
