@@ -24,6 +24,7 @@ GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/down
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+# በአዲሱ ሞዴል ስሪት ተተክቷል
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -159,7 +160,7 @@ def handle_callbacks(call):
         msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
-# --- 6. AI Generation (STRICT LANGUAGE & SYMBOL POLICY) ---
+# --- 6. AI Generation ---
 def final_generation_trigger(message):
     user_selection[message.chat.id]['tos_config'] = message.text
     generate_final_exam(message)
@@ -179,7 +180,6 @@ def generate_final_exam(message):
     bot.send_message(chat_id, "🚀 መጽሐፉን አግኝቻለሁ! አሁን ፈተናውን እያዘጋጀሁ ነው...")
     
     try:
-        # 1. የቋንቋ ደንብ ማስተካከያ (አፋን ኦሮሞ፣ አማርኛ እና እንግሊዝኛ)
         target_subject = data['subject'].lower()
         if target_subject == "afaan oromoo":
             lang_rule = "STRICTLY in Afaan Oromoo language only."
@@ -196,14 +196,19 @@ def generate_final_exam(message):
         1. SOURCE: Use ONLY the provided PDF. Focus on Chapter: {data['chapter']}, Bloom Level: {data['bloom']}, Difficulty: {data['diff']}.
         2. USER COMMAND: Create exactly what the teacher requested: {data['tos_config']}. Do not add extra questions.
         3. LANGUAGE: {lang_rule}
-        4. SYMBOLS & NOISE: REMOVE all unnecessary characters like #, @, &, $, £, *, or any markdown artifacts except for structure.
-        5. MATHEMATICS & SCIENCE: ALL formulas, scientific symbols, variables, and equations MUST be written in high-quality standard LaTeX format using $inline$ or $$display$$ syntax.
+        4. SYMBOLS & NOISE: REMOVE all unnecessary characters like #, @, &, $, £, *, or any markdown artifacts.
+        5. MATHEMATICS & SCIENCE: ALL formulas and symbols MUST be in LaTeX using $inline$ or $$display$$.
         6. STRUCTURE: Generate {data['num_sets']} different sets. Provide TOS, Exam Sets, and Answer Key. Use '---PAGE BREAK---' as separator."""
 
-        uploaded_file = genai.upload_file(path=file_path)
-        response = model.generate_content([uploaded_file, prompt])
+        # አዲሱ እና የተስተካከለው የፋይል አሰቃቀል መንገድ
+        with open(file_path, "rb") as f:
+            file_data = f.read()
+        
+        response = model.generate_content([
+            {"mime_type": "application/pdf", "data": file_data},
+            prompt
+        ])
 
-        # አላስፈላጊ የ AI ምልክቶችን በኮድ ደረጃ ማጽዳት
         content = response.text.replace("###", "").replace("##", "").replace("**", "")
         
         doc = Document()
