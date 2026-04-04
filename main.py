@@ -117,7 +117,6 @@ def handle_callbacks(call):
         if is_subscribed(call.from_user.id): start(call.message)
         else: bot.answer_callback_query(call.id, "❌ አባል አይደሉም!", show_alert=True)
 
-    # 1. ፈተና ወይስ ኖት ምርጫ
     elif data == "mode_selection":
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(types.InlineKeyboardButton("📝 የፈተና ዝግጅት", callback_data="set_mode_exam"),
@@ -130,7 +129,6 @@ def handle_callbacks(call):
 
     elif data.startswith("set_mode_"):
         user_selection[chat_id]['mode'] = data.split('_')[2]
-        # ትምህርት ምርጫ
         markup = types.InlineKeyboardMarkup(row_width=2)
         btns = [types.InlineKeyboardButton(s, callback_data=f"sub_{s}") for s in ALL_SUBJECTS]
         markup.add(*btns)
@@ -138,8 +136,8 @@ def handle_callbacks(call):
         bot.edit_message_text("📚 **ትምህርት ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
 
     elif data == "main_menu":
-        # ወደ ሁነታ ምርጫ ይመለሳል
-        handle_callbacks(types.CallbackQuery(None, None, None, "mode_selection", call.message))
+        call.data = "mode_selection"
+        handle_callbacks(call)
 
     elif data.startswith('sub_'):
         user_selection[chat_id]['subject'] = data.split('_')[1]
@@ -156,8 +154,9 @@ def handle_callbacks(call):
             markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"sub_{user_selection[chat_id]['subject']}"))
             bot.edit_message_text("📝 **የፈተና አይነት ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
         else:
-            # ለኖት ከሆነ በቀጥታ ወደ ምዕራፍ
-            handle_callbacks(types.CallbackQuery(None, None, None, "tp_Note", call.message))
+            # ስህተቱ የነበረው እዚህ ነው (አሁን በትክክል ተስተካክሏል)
+            call.data = "tp_Note"
+            handle_callbacks(call)
 
     elif data.startswith('tp_'):
         user_selection[chat_id]['type'] = data.split('_')[1]
@@ -168,8 +167,8 @@ def handle_callbacks(call):
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"gr_{user_selection[chat_id]['grade']}"))
             bot.edit_message_text("📊 **የክብደት ደረጃ**", chat_id, call.message.message_id, reply_markup=markup)
         else:
-            # ለኖት ከሆነ በቀጥታ ወደ ምዕራፍ
-            handle_callbacks(types.CallbackQuery(None, None, None, "df_Normal", call.message))
+            call.data = "df_Normal"
+            handle_callbacks(call)
 
     elif data.startswith('df_'):
         user_selection[chat_id]['diff'] = data.split('_')[1]
@@ -180,7 +179,8 @@ def handle_callbacks(call):
             markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"tp_{user_selection[chat_id]['type']}"))
             bot.edit_message_text("🧠 **Bloom's Taxonomy**", chat_id, call.message.message_id, reply_markup=markup)
         else:
-            handle_callbacks(types.CallbackQuery(None, None, None, "bl_Note", call.message))
+            call.data = "bl_Note"
+            handle_callbacks(call)
 
     elif data.startswith('bl_'):
         user_selection[chat_id]['bloom'] = data.split('_')[1]
@@ -190,7 +190,11 @@ def handle_callbacks(call):
         markup.add(types.InlineKeyboardButton("📚 All", callback_data="ch_all"), 
                    types.InlineKeyboardButton("🤖 በራሱ (Auto)", callback_data="ch_auto"),
                    types.InlineKeyboardButton("✏️ በእጅ ጻፍ", callback_data="manual_chapter"))
-        markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"df_{user_selection[chat_id]['diff']}"))
+        
+        # ተመለስ በተን ላይ አላስፈላጊ error እንዳያመጣ ጥንቃቄ
+        back_data = f"df_{user_selection[chat_id]['diff']}" if user_selection[chat_id]['mode'] == "exam" else f"sub_{user_selection[chat_id]['subject']}"
+        markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=back_data))
+        
         bot.edit_message_text("📂 **ምዕራፍ ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
 
     elif data == "manual_chapter":
@@ -206,7 +210,6 @@ def handle_callbacks(call):
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
             bot.edit_message_text("🛡️ **የሴት ብዛት**", chat_id, call.message.message_id, reply_markup=markup)
         else:
-            # ለኖት ልዩ በተኖች
             markup = types.InlineKeyboardMarkup(row_width=2)
             markup.add(types.InlineKeyboardButton("📝 አጭር ማጠቃለያ", callback_data="nt_Summary"),
                        types.InlineKeyboardButton("🗺️ Concept Map", callback_data="nt_ConceptMap"),
@@ -217,20 +220,35 @@ def handle_callbacks(call):
 
     elif data.startswith('sec_'):
         user_selection[chat_id]['num_sets'] = int(data.split('_')[1])
-        msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')\n\nወይም 'auto' ብለው ይጻፉ።")
+        msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')\nወይም 'auto' ብለው ይጻፉ።")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
     elif data.startswith('nt_'):
         user_selection[chat_id]['note_style'] = data.split('_')[1]
-        msg = bot.send_message(chat_id, "📄 **ማስታወሻው እንዲያካትት የሚፈልጉት ገጽ ወይም ልዩ ነጥብ ካለ ይጻፉ፡**\n\n(ምንም ከሌለ 'auto' ይበሉ)")
+        msg = bot.send_message(chat_id, "📄 **ማስታወሻው እንዲያካትት የሚፈልጉት ገጽ ወይም ልዩ ነጥብ ካለ ይጻፉ፡**\n(ምንም ከሌለ 'auto' ይበሉ)")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
 # --- 6. AI Generation ---
 
 def process_manual_chapter(message):
-    user_selection[message.chat.id]['chapter'] = message.text
-    # ምዕራፉን በእጅ ከጻፈ በኋላ ወደ ቀጣዩ እንዲያልፍ ፌክ ኮልባክ እንልካለን
-    handle_callbacks(types.CallbackQuery(None, None, None, f"ch_{message.text}", message))
+    chat_id = message.chat.id
+    user_selection[chat_id]['chapter'] = message.text
+    
+    # ምዕራፉን በእጅ ከጻፈ በኋላ አዲሱን ምርጫ በቀጥታ እንልካለን
+    if user_selection[chat_id]['mode'] == "exam":
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
+                   types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="sec_4"))
+        markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
+        bot.send_message(chat_id, "🛡️ **የሴት ብዛት**", reply_markup=markup)
+    else:
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(types.InlineKeyboardButton("📝 አጭር ማጠቃለያ", callback_data="nt_Summary"),
+                   types.InlineKeyboardButton("🗺️ Concept Map", callback_data="nt_ConceptMap"),
+                   types.InlineKeyboardButton("💡 ምሳሌዎች ብቻ", callback_data="nt_Examples"),
+                   types.InlineKeyboardButton("📖 ዝርዝር ማስታወሻ", callback_data="nt_Detailed"))
+        markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
+        bot.send_message(chat_id, "✨ **የኖት አይነት ይምረጡ**", reply_markup=markup)
 
 def final_generation_trigger(message):
     user_selection[message.chat.id]['tos_config'] = message.text
