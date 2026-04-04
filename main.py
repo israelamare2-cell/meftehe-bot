@@ -205,18 +205,22 @@ def handle_callbacks(call):
         user_selection[chat_id]['chapter'] = data.split('_')[1]
         if user_selection[chat_id]['mode'] == "exam":
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
+            markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), 
+                       types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
                        types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="sec_4"))
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
             bot.edit_message_text("🛡️ **የሴት ብዛት**", chat_id, call.message.message_id, reply_markup=markup)
         else:
+            # ለኖት ዝግጅት የቀረቡ 6 Standard በተኖች
             markup = types.InlineKeyboardMarkup(row_width=2)
-            markup.add(types.InlineKeyboardButton("📝 አጭር ማጠቃለያ", callback_data="nt_Summary"),
-                       types.InlineKeyboardButton("🗺️ Concept Map", callback_data="nt_ConceptMap"),
-                       types.InlineKeyboardButton("💡 ምሳሌዎች ብቻ", callback_data="nt_Examples"),
-                       types.InlineKeyboardButton("📖 ዝርዝር ማስታወሻ", callback_data="nt_Detailed"))
+            markup.add(types.InlineKeyboardButton("🎯 አላማና መግቢያ", callback_data="nt_Objectives"),
+                       types.InlineKeyboardButton("📖 ዝርዝር ማስታወሻ", callback_data="nt_Comprehensive"),
+                       types.InlineKeyboardButton("💡 ማብራሪያና ምሳሌ", callback_data="nt_Examples"),
+                       types.InlineKeyboardButton("📝 አጭር ማጠቃለያ", callback_data="nt_Summary"),
+                       types.InlineKeyboardButton("🧠 የክለሳ ጥያቄዎች", callback_data="nt_ReviewQs"),
+                       types.InlineKeyboardButton("🚀 ሁሉንም በአንድ", callback_data="nt_FullPackage"))
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
-            bot.edit_message_text("✨ **የኖት አይነት ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
+            bot.edit_message_text("✨ **የኖት አይነት ይምረጡ (Standardized)**", chat_id, call.message.message_id, reply_markup=markup)
 
     elif data.startswith('sec_'):
         user_selection[chat_id]['num_sets'] = int(data.split('_')[1])
@@ -296,7 +300,10 @@ def generate_final_content(message):
             3. SPECIAL REQUEST: {data['tos_config']} (if not 'auto').
             4. LANGUAGE: {lang_rule}
             5. SYMBOLS: Use LaTeX for formulas.
-            6. OUTPUT: A well-structured teaching note for classroom use."""
+            6. Content: Focus ONLY on the selected style. If 'FullPackage', include Objectives, Definitions, Structured Content, Worked Examples, and Review Questions.
+            7. Tone: Academic, clear, and student-centered.
+            8. Visuals: Insert markers like [Insert Diagram: Descriptive Title] where a visual aid is needed.
+            9. OUTPUT: A well-structured teaching note for classroom use."""
 
         with open(file_path, "rb") as f:
             file_data = f.read()
