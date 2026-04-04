@@ -25,7 +25,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 # በአዲሱ ሞዴል ስሪት ተተክቷል
-model = genai.GenerativeModel('gemini-2.5-flash') # ማሳሰቢያ፡ gemini-1.5 ገና ስላልተለቀቀ ወደ 2.5 ተመልሷል
+model = genai.GenerativeModel('gemini-2.5-flash') 
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
@@ -93,7 +93,6 @@ def start(message):
         bot.send_message(chat_id, "⚠️ ቦቱን ለመጠቀም መጀመሪያ ቻናላችንን ይቀላቀሉ!", reply_markup=markup)
         return
 
-    # አላማ፣ ራዕይ፣ ግብ እና ተልዕኮ መግለጫ
     welcome_text = (
         "🌟 **እንኳን ወደ 'መፍትሔ' (Meftehe) በሰላም መጡ!** 🌟\n\n"
         "🎯 **አላማ፦** መምህራን በቴክኖሎጂ ታግዘው ጥራት ያለው ትምህርት እንዲሰጡ ማስቻል የፈተና ዝግጅት ድካምን መቀነስ።\n\n"
@@ -154,7 +153,6 @@ def handle_callbacks(call):
             markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"sub_{user_selection[chat_id]['subject']}"))
             bot.edit_message_text("📝 **የፈተና አይነት ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
         else:
-            # ስህተቱ የነበረው እዚህ ነው (አሁን በትክክል ተስተካክሏል)
             call.data = "tp_Note"
             handle_callbacks(call)
 
@@ -191,10 +189,8 @@ def handle_callbacks(call):
                    types.InlineKeyboardButton("🤖 በራሱ (Auto)", callback_data="ch_auto"),
                    types.InlineKeyboardButton("✏️ በእጅ ጻፍ", callback_data="manual_chapter"))
         
-        # ተመለስ በተን ላይ አላስፈላጊ error እንዳያመጣ ጥንቃቄ
         back_data = f"df_{user_selection[chat_id]['diff']}" if user_selection[chat_id]['mode'] == "exam" else f"sub_{user_selection[chat_id]['subject']}"
         markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=back_data))
-        
         bot.edit_message_text("📂 **ምዕራፍ ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
 
     elif data == "manual_chapter":
@@ -211,7 +207,6 @@ def handle_callbacks(call):
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
             bot.edit_message_text("🛡️ **የሴት ብዛት**", chat_id, call.message.message_id, reply_markup=markup)
         else:
-            # ለኖት ዝግጅት በቁጥር የተደረደሩ በተኖች እና "Custom Mix" አማራጭ
             markup = types.InlineKeyboardMarkup(row_width=2)
             markup.add(types.InlineKeyboardButton("1. 🎯 አላማና መግቢያ", callback_data="nt_1_Objectives"),
                        types.InlineKeyboardButton("2. 📖 ዝርዝር ማስታወሻ", callback_data="nt_2_Comprehensive"),
@@ -219,7 +214,6 @@ def handle_callbacks(call):
                        types.InlineKeyboardButton("4. 📝 አጭር ማጠቃለያ", callback_data="nt_4_Summary"),
                        types.InlineKeyboardButton("5. 🧠 የክለሳ ጥያቄዎች", callback_data="nt_5_ReviewQs"),
                        types.InlineKeyboardButton("6. 🚀 ሁሉንም በአንድ", callback_data="nt_6_FullPackage"))
-            # አዲሱ "Custom Mix" በተን
             markup.add(types.InlineKeyboardButton("🔀 ምርጫህን አሰባጥር (Custom Mix)", callback_data="nt_custom_mix"))
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
             bot.edit_message_text("✨ **የኖት አይነት ይምረጡ ወይም ስብጥር ያዝዙ**", chat_id, call.message.message_id, reply_markup=markup)
@@ -230,37 +224,78 @@ def handle_callbacks(call):
         bot.register_next_step_handler(msg, final_generation_trigger)
 
     elif data == "nt_custom_mix":
-        msg = bot.send_message(chat_id, 
-            "🔢 **የሚፈልጓቸውን የኖት አይነቶች ቁጥሮች በኮማ ለይተው ይጻፉ፡**\n"
-            "ለምሳሌ፦ '1, 3, 5' ካሉ አላማ፣ ምሳሌ እና የክለሳ ጥያቄዎችን ብቻ ያካትታል።")
-        bot.register_next_step_handler(msg, final_generation_trigger)
+        msg = bot.send_message(chat_id, "🔢 **የሚፈልጓቸውን የኖት አይነቶች ቁጥሮች በኮማ ለይተው ይጻፉ፡**\nለምሳሌ፦ '1, 3, 5'")
+        bot.register_next_step_handler(msg, process_custom_mix)
 
     elif data.startswith('nt_'):
-        # ነጠላ ምርጫ ከሆነም ወደ ጀነሬሽን ይሄዳል
-        user_selection[chat_id]['note_style'] = data.split('_')[2] # ለምሳሌ 'Objectives'
-        msg = bot.send_message(chat_id, "📄 **ማስታወሻው እንዲያካትት የሚፈልጉት ልዩ ነጥብ ካለ ይጻፉ፡**\n(ከሌለ 'auto' ይበሉ)")
+        user_selection[chat_id]['note_style'] = data.split('_')[2] 
+        style = user_selection[chat_id]['note_style']
+        if "ReviewQs" in style or "FullPackage" in style:
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            btns = [types.InlineKeyboardButton(t, callback_data=f"nrtp_{t}") for t in ALL_ASSESSMENT_TYPES]
+            markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"ch_{user_selection[chat_id]['chapter']}"))
+            bot.edit_message_text("📝 **የክለሳ ጥያቄዎቹ ምን አይነት ይሁኑ?**", chat_id, call.message.message_id, reply_markup=markup)
+        else:
+            msg = bot.send_message(chat_id, "📄 **ማስታወሻው እንዲያካትት የሚፈልጉት ልዩ ነጥብ ካለ ይጻፉ (ወይም 'auto')፡**")
+            bot.register_next_step_handler(msg, final_generation_trigger)
+
+    elif data.startswith('nrtp_'):
+        user_selection[chat_id]['nr_type'] = data.split('_')[1]
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(types.InlineKeyboardButton("ቀላል", callback_data="nrdf_Easy"), types.InlineKeyboardButton("መካከለኛ", callback_data="nrdf_Medium"),
+                   types.InlineKeyboardButton("ከባድ", callback_data="nrdf_Hard"), types.InlineKeyboardButton("⚖️ Mixed", callback_data="nrdf_MixedFair"))
+        bot.edit_message_text("📊 **የክለሳ ጥያቄዎቹ የክብደት ደረጃ**", chat_id, call.message.message_id, reply_markup=markup)
+
+    elif data.startswith('nrdf_'):
+        user_selection[chat_id]['nr_diff'] = data.split('_')[1]
+        levels = ["Knowledge", "Understanding", "Application", "Analysis", "Evaluation", "Creation", "Mixed"]
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        btns = [types.InlineKeyboardButton(l, callback_data=f"nrbl_{l}") for l in levels]
+        markup.add(*btns)
+        bot.edit_message_text("🧠 **የጥያቄዎቹ Bloom's Taxonomy**", chat_id, call.message.message_id, reply_markup=markup)
+
+    elif data.startswith('nrbl_'):
+        user_selection[chat_id]['nr_bloom'] = data.split('_')[1]
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="nrsec_1"), types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="nrsec_2"),
+                   types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="nrsec_4"))
+        bot.edit_message_text("🛡️ **የክለሳ ጥያቄዎቹ የሴት ብዛት**", chat_id, call.message.message_id, reply_markup=markup)
+
+    elif data.startswith('nrsec_'):
+        user_selection[chat_id]['nr_sets'] = int(data.split('_')[1])
+        msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ (ወይም 'auto')፡**")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
-# --- 6. AI Generation ---
+# --- 6. AI Generation Helpers ---
+
+def process_custom_mix(message):
+    chat_id = message.chat.id
+    user_selection[chat_id]['note_style'] = f"Custom Mix: {message.text}"
+    if "5" in message.text or "6" in message.text:
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        btns = [types.InlineKeyboardButton(t, callback_data=f"nrtp_{t}") for t in ALL_ASSESSMENT_TYPES]
+        markup.add(*btns)
+        bot.send_message(chat_id, "📝 **በስብጥሩ ውስጥ ለሚገኙት የክለሳ ጥያቄዎች ምን አይነት ይሁኑ?**", reply_markup=markup)
+    else:
+        msg = bot.send_message(chat_id, "📄 **ልዩ ነጥብ ካለ ይጻፉ (ወይም 'auto')፡**")
+        bot.register_next_step_handler(msg, final_generation_trigger)
 
 def process_manual_chapter(message):
     chat_id = message.chat.id
     user_selection[chat_id]['chapter'] = message.text
-    
-    # ምዕራፉን በእጅ ከጻፈ በኋላ አዲሱን ምርጫ በቀጥታ እንልካለን
     if user_selection[chat_id]['mode'] == "exam":
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
                    types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="sec_4"))
-        markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
         bot.send_message(chat_id, "🛡️ **የሴት ብዛት**", reply_markup=markup)
     else:
         markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(types.InlineKeyboardButton("📝 አጭር ማጠቃለያ", callback_data="nt_Summary"),
-                   types.InlineKeyboardButton("🗺️ Concept Map", callback_data="nt_ConceptMap"),
-                   types.InlineKeyboardButton("💡 ምሳሌዎች ብቻ", callback_data="nt_Examples"),
-                   types.InlineKeyboardButton("📖 ዝርዝር ማስታወሻ", callback_data="nt_Detailed"))
-        markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
+        markup.add(types.InlineKeyboardButton("1. 🎯 አላማና መግቢያ", callback_data="nt_1_Objectives"),
+                   types.InlineKeyboardButton("2. 📖 ዝርዝር ማስታወሻ", callback_data="nt_2_Comprehensive"),
+                   types.InlineKeyboardButton("3. 💡 ማብራሪያና ምሳሌ", callback_data="nt_3_Examples"),
+                   types.InlineKeyboardButton("4. 📝 አጭር ማጠቃለያ", callback_data="nt_4_Summary"),
+                   types.InlineKeyboardButton("5. 🧠 የክለሳ ጥያቄዎች", callback_data="nt_5_ReviewQs"),
+                   types.InlineKeyboardButton("6. 🚀 ሁሉንም በአንድ", callback_data="nt_6_FullPackage"))
         bot.send_message(chat_id, "✨ **የኖት አይነት ይምረጡ**", reply_markup=markup)
 
 def final_generation_trigger(message):
@@ -302,36 +337,39 @@ def generate_final_content(message):
             4. SYMBOLS: ALL formulas in LaTeX using $inline$ or $$display$$.
             5. OUTPUT: {data['num_sets']} different sets. Include TOS, Exam, and Answer Key. Page break using '---PAGE BREAK---'."""
         else:
-            # መምህሩ የሰጠውን ቁጥር ወይም ስታይል የመለየት ስራ
             style_request = data.get('note_style', data.get('tos_config', 'FullPackage'))
+            review_config = ""
+            if 'nr_type' in data:
+                review_config = f"""
+                REVIEW QUESTIONS CONFIGURATION:
+                - Exam Type: {data['nr_type']}
+                - Difficulty: {data['nr_diff']}
+                - Bloom's Taxonomy: {data['nr_bloom']}
+                - Number of Sets: {data['nr_sets']} sets
+                - Structure: {data.get('tos_config', 'auto')}
+                Ensure the review questions strictly follow this configuration.
+                """
             
             prompt = f"""You are a Professional Curriculum Expert.
             TASK: Create a teaching note for Chapter: {data['chapter']} from the PDF.
             STYLE/COMPOSITION: {style_request}
-            
-            REFERENCE FOR NUMBERS (If user provided numbers):
-            1=Objectives/Key Terms, 2=Detailed Content, 3=Examples/Explanations, 4=Summary, 5=Review Questions, 6=All Above.
-            
+            REFERENCE FOR NUMBERS: 1=Objectives, 2=Detailed Content, 3=Examples, 4=Summary, 5=Review Questions, 6=All Above.
+            {review_config}
             STRICT REQUIREMENTS:
             1. Language: {lang_rule}
-            2. If specific numbers are provided (e.g., '1, 3, 5'), include ONLY those sections.
+            2. If specific numbers are provided, include ONLY those sections.
             3. Formulas: Use LaTeX.
             4. Tone: Educational and clear.
-            5. Visuals: Placeholders like [Insert Image: Description] where appropriate."""
+            5. Visuals: Placeholders like [Insert Image: Description]."""
 
         with open(file_path, "rb") as f:
             file_data = f.read()
         
-        response = model.generate_content([
-            {"mime_type": "application/pdf", "data": file_data},
-            prompt
-        ])
-
+        response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
         content = response.text.replace("###", "").replace("##", "").replace("**", "")
         
         doc = Document()
         doc.add_heading(f"{data['subject']} - Grade {data['grade']} {data['mode'].capitalize()}", level=1)
-        
         for section in content.split("---PAGE BREAK---"):
             if section.strip():
                 doc.add_paragraph(section.strip())
