@@ -211,25 +211,34 @@ def handle_callbacks(call):
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
             bot.edit_message_text("🛡️ **የሴት ብዛት**", chat_id, call.message.message_id, reply_markup=markup)
         else:
-            # ለኖት ዝግጅት የቀረቡ 6 Standard በተኖች
+            # ለኖት ዝግጅት በቁጥር የተደረደሩ በተኖች እና "Custom Mix" አማራጭ
             markup = types.InlineKeyboardMarkup(row_width=2)
-            markup.add(types.InlineKeyboardButton("🎯 አላማና መግቢያ", callback_data="nt_Objectives"),
-                       types.InlineKeyboardButton("📖 ዝርዝር ማስታወሻ", callback_data="nt_Comprehensive"),
-                       types.InlineKeyboardButton("💡 ማብራሪያና ምሳሌ", callback_data="nt_Examples"),
-                       types.InlineKeyboardButton("📝 አጭር ማጠቃለያ", callback_data="nt_Summary"),
-                       types.InlineKeyboardButton("🧠 የክለሳ ጥያቄዎች", callback_data="nt_ReviewQs"),
-                       types.InlineKeyboardButton("🚀 ሁሉንም በአንድ", callback_data="nt_FullPackage"))
+            markup.add(types.InlineKeyboardButton("1. 🎯 አላማና መግቢያ", callback_data="nt_1_Objectives"),
+                       types.InlineKeyboardButton("2. 📖 ዝርዝር ማስታወሻ", callback_data="nt_2_Comprehensive"),
+                       types.InlineKeyboardButton("3. 💡 ማብራሪያና ምሳሌ", callback_data="nt_3_Examples"),
+                       types.InlineKeyboardButton("4. 📝 አጭር ማጠቃለያ", callback_data="nt_4_Summary"),
+                       types.InlineKeyboardButton("5. 🧠 የክለሳ ጥያቄዎች", callback_data="nt_5_ReviewQs"),
+                       types.InlineKeyboardButton("6. 🚀 ሁሉንም በአንድ", callback_data="nt_6_FullPackage"))
+            # አዲሱ "Custom Mix" በተን
+            markup.add(types.InlineKeyboardButton("🔀 ምርጫህን አሰባጥር (Custom Mix)", callback_data="nt_custom_mix"))
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
-            bot.edit_message_text("✨ **የኖት አይነት ይምረጡ (Standardized)**", chat_id, call.message.message_id, reply_markup=markup)
+            bot.edit_message_text("✨ **የኖት አይነት ይምረጡ ወይም ስብጥር ያዝዙ**", chat_id, call.message.message_id, reply_markup=markup)
 
     elif data.startswith('sec_'):
         user_selection[chat_id]['num_sets'] = int(data.split('_')[1])
         msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')\nወይም 'auto' ብለው ይጻፉ።")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
+    elif data == "nt_custom_mix":
+        msg = bot.send_message(chat_id, 
+            "🔢 **የሚፈልጓቸውን የኖት አይነቶች ቁጥሮች በኮማ ለይተው ይጻፉ፡**\n"
+            "ለምሳሌ፦ '1, 3, 5' ካሉ አላማ፣ ምሳሌ እና የክለሳ ጥያቄዎችን ብቻ ያካትታል።")
+        bot.register_next_step_handler(msg, final_generation_trigger)
+
     elif data.startswith('nt_'):
-        user_selection[chat_id]['note_style'] = data.split('_')[1]
-        msg = bot.send_message(chat_id, "📄 **ማስታወሻው እንዲያካትት የሚፈልጉት ገጽ ወይም ልዩ ነጥብ ካለ ይጻፉ፡**\n(ምንም ከሌለ 'auto' ይበሉ)")
+        # ነጠላ ምርጫ ከሆነም ወደ ጀነሬሽን ይሄዳል
+        user_selection[chat_id]['note_style'] = data.split('_')[2] # ለምሳሌ 'Objectives'
+        msg = bot.send_message(chat_id, "📄 **ማስታወሻው እንዲያካትት የሚፈልጉት ልዩ ነጥብ ካለ ይጻፉ፡**\n(ከሌለ 'auto' ይበሉ)")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
 # --- 6. AI Generation ---
@@ -293,17 +302,22 @@ def generate_final_content(message):
             4. SYMBOLS: ALL formulas in LaTeX using $inline$ or $$display$$.
             5. OUTPUT: {data['num_sets']} different sets. Include TOS, Exam, and Answer Key. Page break using '---PAGE BREAK---'."""
         else:
-            prompt = f"""You are an expert Educator.
-            STRICT COMPLIANCE:
-            1. SOURCE: Use ONLY the provided PDF. Focus on Chapter: {data['chapter']}.
-            2. STYLE: Prepare a teaching note in '{data['note_style']}' format. 
-            3. SPECIAL REQUEST: {data['tos_config']} (if not 'auto').
-            4. LANGUAGE: {lang_rule}
-            5. SYMBOLS: Use LaTeX for formulas.
-            6. Content: Focus ONLY on the selected style. If 'FullPackage', include Objectives, Definitions, Structured Content, Worked Examples, and Review Questions.
-            7. Tone: Academic, clear, and student-centered.
-            8. Visuals: Insert markers like [Insert Diagram: Descriptive Title] where a visual aid is needed.
-            9. OUTPUT: A well-structured teaching note for classroom use."""
+            # መምህሩ የሰጠውን ቁጥር ወይም ስታይል የመለየት ስራ
+            style_request = data.get('note_style', data.get('tos_config', 'FullPackage'))
+            
+            prompt = f"""You are a Professional Curriculum Expert.
+            TASK: Create a teaching note for Chapter: {data['chapter']} from the PDF.
+            STYLE/COMPOSITION: {style_request}
+            
+            REFERENCE FOR NUMBERS (If user provided numbers):
+            1=Objectives/Key Terms, 2=Detailed Content, 3=Examples/Explanations, 4=Summary, 5=Review Questions, 6=All Above.
+            
+            STRICT REQUIREMENTS:
+            1. Language: {lang_rule}
+            2. If specific numbers are provided (e.g., '1, 3, 5'), include ONLY those sections.
+            3. Formulas: Use LaTeX.
+            4. Tone: Educational and clear.
+            5. Visuals: Placeholders like [Insert Image: Description] where appropriate."""
 
         with open(file_path, "rb") as f:
             file_data = f.read()
