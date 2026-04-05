@@ -3,6 +3,7 @@ import telebot
 from telebot import types
 import google.generativeai as genai
 from docx import Document
+from docx.shared import Pt
 import io
 import sqlite3
 import threading
@@ -258,7 +259,17 @@ def handle_callbacks(call):
 
     elif data.startswith('rev_'):
         user_selection[chat_id]['review_type'] = data.split('_')[1]
-        msg = bot.send_message(chat_id, "📄 **ልዩ ትኩረት እንዲሰጥበት የሚፈልጉት ነጥብ ካለ ይጻፉ (ወይም 'auto')፡**")
+        # አዲስ፡ የገፅ ቁጥር መምረጫ በተኖች
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        ranges = ["1-20", "21-50", "51-100", "101-150", "151-200", "All Pages"]
+        btns = [types.InlineKeyboardButton(f"ገፅ {r}", callback_data=f"pg_{r}") for r in ranges]
+        markup.add(*btns)
+        markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"ch_{user_selection[chat_id]['chapter']}"))
+        bot.edit_message_text("📄 **ለመገምገም የሚፈልጉትን የገፅ ክልል ይምረጡ፦**", chat_id, call.message.message_id, reply_markup=markup)
+
+    elif data.startswith('pg_'):
+        user_selection[chat_id]['page_range'] = data.split('_')[1]
+        msg = bot.send_message(chat_id, "🖋 **ልዩ ትኩረት እንዲሰጥበት የሚፈልጉት ነጥብ ካለ ይጻፉ (ወይም 'auto')፡**")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
     elif data == "nt_custom_mix":
@@ -363,7 +374,6 @@ def generate_final_content(message):
     
     try:
         target_subject = data['subject'].lower()
-        # የቋንቋ ምርጫ ህግ (Logic)
         if target_subject == "afaan oromoo":
             lang_rule = "STRICTLY in Afaan Oromoo language only. Use professional educational Oromo terms."
         elif target_subject == "amharic":
@@ -385,51 +395,58 @@ def generate_final_content(message):
         
         elif data['mode'] == "review":
             review_type = data['review_type']
-            prompt = f"""You are a High-Level Curriculum Auditor.
-            TASK: Conduct a Professional Review of Chapter: {data['chapter']} from the PDF.
+            page_range = data.get('page_range', 'specified chapters')
+            prompt = f"""You are a Precise Curriculum Auditor.
+            TASK: Conduct a PAGE-BY-PAGE Audit of the PDF for Page Range/Chapter: {page_range} / {data['chapter']}.
             REVIEW SCOPE: {review_type}
             
-            STRICT FORMATTING RULES FOR DOCUMENT CLARITY:
-            1. Use clear Headings for each section.
-            2. Use Bullet points for strengths and weaknesses.
-            3. Use Tables where necessary to compare standards.
-            4. Add a 'Professional Recommendation' section at the end.
-            5. Leave clear spacing between paragraphs.
+            STRICT OUTPUT STRUCTURE:
+            1. EXECUTIVE SUMMARY: A brief overview of the quality.
+            2. DETAILED PAGE-BY-PAGE FINDINGS: 
+               - Format: [Page X]: List specific errors (factual, grammatical, or pedagogical) or improvement points.
+               - Be very specific about what is on that page.
+            3. CRITICAL ERRORS TABLE: A table showing [Page #], [Current Content], [Suggested Correction].
+            4. PEDAGOGICAL ALIGNMENT: How it fits SMASE and 21st Century Skills.
             
-            CONTENT STANDARDS:
-            - Pedagogy (SMASE), 21st Century Skills, Indigenous Knowledge, and Inclusivity.
+            FORMATTING:
+            - Use Bold for Page numbers.
+            - Use Tables for corrections using '|' symbols.
             - LANGUAGE: {lang_rule}
             - USER SPECIAL NOTE: {data.get('tos_config', 'auto')}"""
 
         else:
-            # (ለኖት ዝግጅት ያለው ፕሮምፕት እንዳለ ይቀጥላል...)
             style_request = data.get('note_style', data.get('tos_config', 'FullPackage'))
-            prompt = f"Professional Curriculum Expert Note Generation... {lang_rule}..."
+            prompt = f"Professional Curriculum Expert Note Generation for Chapter {data['chapter']}... Style: {style_request}. Language: {lang_rule}..."
 
         with open(file_path, "rb") as f:
             file_data = f.read()
         
         response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
-        
-        # ጽሁፉን ከማያስፈልጉ ምልክቶች ማፅዳት
         raw_content = response.text.replace("###", "").replace("##", "")
         
         doc = Document()
-        # የዶክመንቱን ርዕስ ማሳመር
         title = doc.add_heading(f"{data['subject']} - Grade {data['grade']} {data['mode'].upper()}", 0)
-        title.alignment = 1 # Center align
+        title.alignment = 1 
 
-        # ይዘቱን ወደ ዶክመንት መቀየር (በክፍተቶች እና በአርዕስቶች)
-        sections = raw_content.split('\n\n') # በሁለት መስመር ክፍተት መከፋፈል
+        # ሪፖርት ዝርዝር መረጃ ማከል
+        if data['mode'] == "review":
+            meta = doc.add_paragraph()
+            meta.add_run(f"Audit Scope: {data['review_type']}\nPages Reviewed: {data.get('page_range', 'All')}\n").bold = True
+
+        sections = raw_content.split('\n\n')
         for section in sections:
-            if section.strip():
-                if ":" in section.split('\n')[0] and len(section.split('\n')[0]) < 50:
-                    # አርዕስት የሚመስሉ መስመሮችን Bold ማድረግ
-                    p = doc.add_paragraph()
-                    run = p.add_run(section.strip())
-                    run.bold = True
-                else:
-                    doc.add_paragraph(section.strip())
+            clean_sec = section.strip()
+            if not clean_sec: continue
+            
+            # የገፅ ቁጥሮችን እና አርዕስቶችን ቦልድ የማድረግ ሎጂክ
+            if clean_sec.startswith("[Page") or clean_sec.startswith("Page") or ":" in clean_sec.split('\n')[0]:
+                p = doc.add_paragraph()
+                run = p.add_run(clean_sec)
+                run.bold = True
+            elif "|" in clean_sec: # ሰንጠረዥ የማስተካከል ሙከራ
+                doc.add_paragraph(clean_sec) # ለጊዜው እንደ ጽሁፍ
+            else:
+                doc.add_paragraph(clean_sec)
         
         file_stream = io.BytesIO()
         doc.save(file_stream)
