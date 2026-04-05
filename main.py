@@ -119,7 +119,8 @@ def handle_callbacks(call):
     elif data == "mode_selection":
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(types.InlineKeyboardButton("📝 የፈተና ዝግጅት", callback_data="set_mode_exam"),
-                   types.InlineKeyboardButton("📚 የማስተማሪያ ኖት", callback_data="set_mode_note"))
+                   types.InlineKeyboardButton("📚 የማስተማሪያ ኖት", callback_data="set_mode_note"),
+                   types.InlineKeyboardButton("🔍 የመፅሀፍ ግምገማ", callback_data="set_mode_review"))
         markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data="start_back"))
         bot.edit_message_text("🛠 **ምን ማዘጋጀት ይፈልጋሉ?**", chat_id, call.message.message_id, reply_markup=markup)
 
@@ -147,35 +148,47 @@ def handle_callbacks(call):
 
     elif data.startswith('gr_'):
         user_selection[chat_id]['grade'] = data.split('_')[1]
-        if user_selection[chat_id]['mode'] == "exam":
+        mode = user_selection[chat_id]['mode']
+        if mode == "exam":
             markup = types.InlineKeyboardMarkup(row_width=2)
             btns = [types.InlineKeyboardButton(t, callback_data=f"tp_{t}") for t in ALL_ASSESSMENT_TYPES]
             markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"sub_{user_selection[chat_id]['subject']}"))
             bot.edit_message_text("📝 **የፈተና አይነት ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
+        elif mode == "review":
+            call.data = "tp_Review"
+            handle_callbacks(call)
         else:
             call.data = "tp_Note"
             handle_callbacks(call)
 
     elif data.startswith('tp_'):
         user_selection[chat_id]['type'] = data.split('_')[1]
-        if user_selection[chat_id]['mode'] == "exam":
+        mode = user_selection[chat_id]['mode']
+        if mode == "exam":
             markup = types.InlineKeyboardMarkup(row_width=2)
             markup.add(types.InlineKeyboardButton("ቀላል", callback_data="df_Easy"), types.InlineKeyboardButton("መካከለኛ", callback_data="df_Medium"),
                        types.InlineKeyboardButton("ከባድ", callback_data="df_Hard"), types.InlineKeyboardButton("⚖️ Mixed", callback_data="df_MixedFair"))
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"gr_{user_selection[chat_id]['grade']}"))
             bot.edit_message_text("📊 **የክብደት ደረጃ**", chat_id, call.message.message_id, reply_markup=markup)
+        elif mode == "review":
+            call.data = "df_Standard"
+            handle_callbacks(call)
         else:
             call.data = "df_Normal"
             handle_callbacks(call)
 
     elif data.startswith('df_'):
         user_selection[chat_id]['diff'] = data.split('_')[1]
-        if user_selection[chat_id]['mode'] == "exam":
+        mode = user_selection[chat_id]['mode']
+        if mode == "exam":
             levels = ["Knowledge", "Understanding", "Application", "Analysis", "Evaluation", "Creation", "Mixed"]
             markup = types.InlineKeyboardMarkup(row_width=2)
             btns = [types.InlineKeyboardButton(l, callback_data=f"bl_{l}") for l in levels]
             markup.add(*btns, types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"tp_{user_selection[chat_id]['type']}"))
             bot.edit_message_text("🧠 **Bloom's Taxonomy**", chat_id, call.message.message_id, reply_markup=markup)
+        elif mode == "review":
+            call.data = "bl_Audit"
+            handle_callbacks(call)
         else:
             call.data = "bl_Note"
             handle_callbacks(call)
@@ -199,13 +212,24 @@ def handle_callbacks(call):
 
     elif data.startswith('ch_'):
         user_selection[chat_id]['chapter'] = data.split('_')[1]
-        if user_selection[chat_id]['mode'] == "exam":
+        mode = user_selection[chat_id]['mode']
+        if mode == "exam":
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), 
                        types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
                        types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="sec_4"))
             markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
             bot.edit_message_text("🛡️ **የሴት ብዛት**", chat_id, call.message.message_id, reply_markup=markup)
+        elif mode == "review":
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(types.InlineKeyboardButton("🔍 አጠቃላይ ኦዲት (Full Audit)", callback_data="rev_FullAudit"),
+                       types.InlineKeyboardButton("🧠 ፔዳጎጂ እና SMASE ግምገማ", callback_data="rev_Pedagogy"),
+                       types.InlineKeyboardButton("📝 የጥያቄዎች ጥራት ኦዲት", callback_data="rev_Assessment"),
+                       types.InlineKeyboardButton("🇪🇹 የሀገር በቀል እውቀትና እሴት", callback_data="rev_Indigenous"),
+                       types.InlineKeyboardButton("🚀 የ21ኛው ክፍለዘመን ክህሎቶች", callback_data="rev_21stCentury"),
+                       types.InlineKeyboardButton("🌍 አካታችነትና የፆታ ተመጣጣኝነት", callback_data="rev_Inclusivity"))
+            markup.add(types.InlineKeyboardButton("⬅️ ተመለስ", callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
+            bot.edit_message_text("🧐 **የግምገማ ዘርፍ ይምረጡ**", chat_id, call.message.message_id, reply_markup=markup)
         else:
             markup = types.InlineKeyboardMarkup(row_width=2)
             markup.add(types.InlineKeyboardButton("1. 🎯 አላማና መግቢያ", callback_data="nt_1_Objectives"),
@@ -221,6 +245,11 @@ def handle_callbacks(call):
     elif data.startswith('sec_'):
         user_selection[chat_id]['num_sets'] = int(data.split('_')[1])
         msg = bot.send_message(chat_id, "🔢 **የጥያቄ ብዛትና መዋቅር ይጻፉ**\n(ለምሳሌ፦ 'ምርጫ=10, እውነት/ሐሰት=5')\nወይም 'auto' ብለው ይጻፉ።")
+        bot.register_next_step_handler(msg, final_generation_trigger)
+
+    elif data.startswith('rev_'):
+        user_selection[chat_id]['review_type'] = data.split('_')[1]
+        msg = bot.send_message(chat_id, "📄 **ልዩ ትኩረት እንዲሰጥበት የሚፈልጉት ነጥብ ካለ ይጻፉ (ወይም 'auto')፡**")
         bot.register_next_step_handler(msg, final_generation_trigger)
 
     elif data == "nt_custom_mix":
@@ -283,11 +312,18 @@ def process_custom_mix(message):
 def process_manual_chapter(message):
     chat_id = message.chat.id
     user_selection[chat_id]['chapter'] = message.text
-    if user_selection[chat_id]['mode'] == "exam":
+    mode = user_selection[chat_id]['mode']
+    if mode == "exam":
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
                    types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="sec_4"))
         bot.send_message(chat_id, "🛡️ **የሴት ብዛት**", reply_markup=markup)
+    elif mode == "review":
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(types.InlineKeyboardButton("🔍 አጠቃላይ ኦዲት (Full Audit)", callback_data="rev_FullAudit"),
+                   types.InlineKeyboardButton("🧠 ፔዳጎጂ እና SMASE ግምገማ", callback_data="rev_Pedagogy"),
+                   types.InlineKeyboardButton("📝 የጥያቄዎች ጥራት ኦዲት", callback_data="rev_Assessment"))
+        bot.send_message(chat_id, "🧐 **የግምገማ ዘርፍ ይምረጡ**", reply_markup=markup)
     else:
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(types.InlineKeyboardButton("1. 🎯 አላማና መግቢያ", callback_data="nt_1_Objectives"),
@@ -336,6 +372,23 @@ def generate_final_content(message):
             3. LANGUAGE: {lang_rule}
             4. SYMBOLS: ALL formulas in LaTeX using $inline$ or $$display$$.
             5. OUTPUT: {data['num_sets']} different sets. Include TOS, Exam, and Answer Key. Page break using '---PAGE BREAK---'."""
+        
+        elif data['mode'] == "review":
+            review_type = data['review_type']
+            prompt = f"""You are a High-Level Curriculum Auditor and Educational Expert.
+            TASK: Conduct a Professional Review of the Textbook/Chapter: {data['chapter']} from the provided PDF.
+            REVIEW SCOPE: {review_type}
+            STRICT AUDIT STANDARDS:
+            1. ALIGNMENT: Check curriculum goals, Bloom's Taxonomy level, and logical progression.
+            2. PEDAGOGY: Assess Student-centeredness (SMASE framework) and real-world application.
+            3. QUALITY: Verify factual accuracy and age-appropriateness of the language.
+            4. INDIGENOUS KNOWLEDGE: Evaluate inclusion of Ethiopian heritage, culture, and indigenous values.
+            5. 21st CENTURY SKILLS: Check for Critical Thinking, Creativity, Collaboration, and Communication (4Cs).
+            6. INCLUSIVITY: Audit for Gender Balance and Cultural Representation.
+            7. LANGUAGE: {lang_rule}
+            8. OUTPUT FORMAT: Provide a structured table of strengths, weaknesses, and professional recommendations for improvement.
+            USER SPECIAL NOTE: {data.get('tos_config', 'auto')}"""
+
         else:
             style_request = data.get('note_style', data.get('tos_config', 'FullPackage'))
             review_config = ""
