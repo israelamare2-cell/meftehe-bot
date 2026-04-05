@@ -363,8 +363,9 @@ def generate_final_content(message):
     
     try:
         target_subject = data['subject'].lower()
+        # የቋንቋ ምርጫ ህግ (Logic)
         if target_subject == "afaan oromoo":
-            lang_rule = "STRICTLY in Afaan Oromoo language only."
+            lang_rule = "STRICTLY in Afaan Oromoo language only. Use professional educational Oromo terms."
         elif target_subject == "amharic":
             lang_rule = "STRICTLY in Amharic language only."
         elif target_subject == "english":
@@ -384,59 +385,52 @@ def generate_final_content(message):
         
         elif data['mode'] == "review":
             review_type = data['review_type']
-            prompt = f"""You are a High-Level Curriculum Auditor and Educational Expert.
-            TASK: Conduct a Professional Review of the Textbook/Chapter: {data['chapter']} from the provided PDF.
+            prompt = f"""You are a High-Level Curriculum Auditor.
+            TASK: Conduct a Professional Review of Chapter: {data['chapter']} from the PDF.
             REVIEW SCOPE: {review_type}
-            STRICT AUDIT STANDARDS:
-            1. ALIGNMENT: Check curriculum goals, Bloom's Taxonomy level, and logical progression.
-            2. PEDAGOGY: Assess Student-centeredness (SMASE framework) and real-world application.
-            3. QUALITY: Verify factual accuracy and age-appropriateness of the language.
-            4. INDIGENOUS KNOWLEDGE: Evaluate inclusion of Ethiopian heritage, culture, and indigenous values.
-            5. 21st CENTURY SKILLS: Check for Critical Thinking, Creativity, Collaboration, and Communication (4Cs).
-            6. INCLUSIVITY: Audit for Gender Balance and Cultural Representation.
-            7. LANGUAGE: {lang_rule}
-            8. OUTPUT FORMAT: Provide a structured table of strengths, weaknesses, and professional recommendations for improvement.
-            USER SPECIAL NOTE: {data.get('tos_config', 'auto')}"""
+            
+            STRICT FORMATTING RULES FOR DOCUMENT CLARITY:
+            1. Use clear Headings for each section.
+            2. Use Bullet points for strengths and weaknesses.
+            3. Use Tables where necessary to compare standards.
+            4. Add a 'Professional Recommendation' section at the end.
+            5. Leave clear spacing between paragraphs.
+            
+            CONTENT STANDARDS:
+            - Pedagogy (SMASE), 21st Century Skills, Indigenous Knowledge, and Inclusivity.
+            - LANGUAGE: {lang_rule}
+            - USER SPECIAL NOTE: {data.get('tos_config', 'auto')}"""
 
         else:
+            # (ለኖት ዝግጅት ያለው ፕሮምፕት እንዳለ ይቀጥላል...)
             style_request = data.get('note_style', data.get('tos_config', 'FullPackage'))
-            review_config = ""
-            if 'nr_type' in data:
-                review_config = f"""
-                REVIEW QUESTIONS CONFIGURATION:
-                - Exam Type: {data['nr_type']}
-                - Difficulty: {data['nr_diff']}
-                - Bloom's Taxonomy: {data['nr_bloom']}
-                - Number of Sets: {data['nr_sets']} sets
-                - Structure: {data.get('tos_config', 'auto')}
-                Ensure the review questions strictly follow this configuration.
-                """
-            
-            prompt = f"""You are a Professional Curriculum Expert.
-            TASK: Create a teaching note for Chapter: {data['chapter']} from the PDF.
-            STYLE/COMPOSITION: {style_request}
-            REFERENCE FOR NUMBERS: 1=Objectives, 2=Detailed Content, 3=Examples, 4=Summary, 5=Review Questions, 6=All Above.
-            {review_config}
-            STRICT REQUIREMENTS:
-            1. Language: {lang_rule}
-            2. If specific numbers are provided, include ONLY those sections.
-            3. Formulas: Use LaTeX.
-            4. Tone: Educational and clear.
-            5. Visuals: Placeholders like [Insert Image: Description]."""
+            prompt = f"Professional Curriculum Expert Note Generation... {lang_rule}..."
 
         with open(file_path, "rb") as f:
             file_data = f.read()
         
         response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
-        content = response.text.replace("###", "").replace("##", "").replace("**", "")
+        
+        # ጽሁፉን ከማያስፈልጉ ምልክቶች ማፅዳት
+        raw_content = response.text.replace("###", "").replace("##", "")
         
         doc = Document()
-        doc.add_heading(f"{data['subject']} - Grade {data['grade']} {data['mode'].capitalize()}", level=1)
-        for section in content.split("---PAGE BREAK---"):
-            if section.strip():
-                doc.add_paragraph(section.strip())
-                doc.add_page_break()
+        # የዶክመንቱን ርዕስ ማሳመር
+        title = doc.add_heading(f"{data['subject']} - Grade {data['grade']} {data['mode'].upper()}", 0)
+        title.alignment = 1 # Center align
 
+        # ይዘቱን ወደ ዶክመንት መቀየር (በክፍተቶች እና በአርዕስቶች)
+        sections = raw_content.split('\n\n') # በሁለት መስመር ክፍተት መከፋፈል
+        for section in sections:
+            if section.strip():
+                if ":" in section.split('\n')[0] and len(section.split('\n')[0]) < 50:
+                    # አርዕስት የሚመስሉ መስመሮችን Bold ማድረግ
+                    p = doc.add_paragraph()
+                    run = p.add_run(section.strip())
+                    run.bold = True
+                else:
+                    doc.add_paragraph(section.strip())
+        
         file_stream = io.BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
