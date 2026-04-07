@@ -26,7 +26,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 # በአዲሱ ሞዴል ስሪት ተተክቷል
-model = genai.GenerativeModel('gemini 2.0-Flash-Lite') 
+model = genai.GenerativeModel('gemini-2.5-flash') 
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
