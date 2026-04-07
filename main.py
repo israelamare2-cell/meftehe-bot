@@ -26,7 +26,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 # በአዲሱ ሞዴል ስሪት ተተክቷል
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('gemini-2.0-flash-lite')
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
@@ -64,7 +64,11 @@ STRINGS = {
         'tp_select': "📝 **የፈተና አይነት ይምረጡ**",
         'diff_select': "📊 **የክብደት ደረጃ**",
         'ch_select': "📂 **ምዕራፍ ይምረጡ**",
-        'set_select': "🛡️ **የሴት ብዛት**"
+        'set_select': "🛡️ **የሴት ብዛት**",
+        'lang_option_msg': "📖 **ለቋንቋ ትምህርት ምን ይዘጋጅ?**",
+        'opt_passage_only': "📄 ምንባብ ብቻ",
+        'opt_question_only': "❓ ጥያቄ ብቻ",
+        'opt_both': "📑 ምንባብ እና ጥያቄ"
     },
     'or': {
         'welcome': "Baga nagaan gara 'Meftehe' dhuftan!",
@@ -80,7 +84,11 @@ STRINGS = {
         'tp_select': "📝 **Akaakuu Qorumsaa**",
         'diff_select': "📊 **Sadarkaa Ulfaatinaa**",
         'ch_select': "📂 **Boqonnaa Filadhu**",
-        'set_select': "🛡️ **Baay'ina Seetii**"
+        'set_select': "🛡️ **Baay'ina Seetii**",
+        'lang_option_msg': "📖 **Barnoota afaaniif maal qopheessu?**",
+        'opt_passage_only': "📄 Dubbisa Qofa",
+        'opt_question_only': "❓ Gaaffii Qofa",
+        'opt_both': "📑 Dubbisaafi Gaaffii"
     },
     'ti': {
         'welcome': "እንኳዕ ናብ 'መፍትሔ' (Meftehe) በሰላም መጻእኩም!",
@@ -96,7 +104,11 @@ STRINGS = {
         'tp_select': "📝 **ዓይነት ፈተና ይምረጡ**",
         'diff_select': "📊 **ደረጃ ከቢድነት**",
         'ch_select': "📂 **ምዕራፍ ይምረጡ**",
-        'set_select': "🛡️ **ብዝሒ ሴት**"
+        'set_select': "🛡️ **ብዝሒ ሴት**",
+        'lang_option_msg': "📖 **ንትምህርቲ ቋንቋ እንታይ ይዳሎ?**",
+        'opt_passage_only': "📄 ምንባብ ጥራሕ",
+        'opt_question_only': "❓ ሕቶ ጥራሕ",
+        'opt_both': "📑 ምንባብን ሕቶን"
     },
     'so': {
         'welcome': "Ku soo dhawaada 'Meftehe'!",
@@ -112,7 +124,11 @@ STRINGS = {
         'tp_select': "📝 **Dooro Nooca Imtixaanka**",
         'diff_select': "📊 **Heerka Adkaanta**",
         'ch_select': "📂 **Dooro Cutubka**",
-        'set_select': "🛡️ **Tirada Isu-geynta**"
+        'set_select': "🛡️ **Tirada Isu-geynta**",
+        'lang_option_msg': "📖 **Maxaa loo diyaariyaa casharka luqadda?**",
+        'opt_passage_only': "📄 Qoraalka kaliya",
+        'opt_question_only': "❓ Su'aalaha kaliya",
+        'opt_both': "📑 Qoraalka iyo Su'aalaha"
     },
     'en': {
         'welcome': "Welcome to 'Meftehe'!",
@@ -128,7 +144,11 @@ STRINGS = {
         'tp_select': "📝 **Select Exam Type**",
         'diff_select': "📊 **Difficulty Level**",
         'ch_select': "📂 **Select Chapter**",
-        'set_select': "🛡️ **Number of Sets**"
+        'set_select': "🛡️ **Number of Sets**",
+        'lang_option_msg': "📖 **What to prepare for Language subject?**",
+        'opt_passage_only': "📄 Passage Only",
+        'opt_question_only': "❓ Questions Only",
+        'opt_both': "📑 Passage & Questions"
     }
 }
 
@@ -316,13 +336,27 @@ def handle_callbacks(call):
     elif data.startswith('ch_'):
         user_selection[chat_id]['chapter'] = data.split('_')[1]
         mode = user_selection[chat_id]['mode']
+        subject = user_selection[chat_id]['subject']
+        
+        # ቋንቋ ከሆነ ምርጫ ማምጣት (ለአማርኛ፣ እንግሊዝኛ፣ አፋን ኦሮሞ)
+        is_language = subject.lower() in ["amharic", "english", "afaan oromoo"]
+        
         if mode == "exam":
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), 
-                       types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
-                       types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="sec_4"))
-            markup.add(types.InlineKeyboardButton(STRINGS[lang]['back'], callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
-            bot.edit_message_text(STRINGS[lang]['set_select'], chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            if is_language:
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(
+                    types.InlineKeyboardButton(STRINGS[lang]['opt_passage_only'], callback_data="lopt_PassageOnly"),
+                    types.InlineKeyboardButton(STRINGS[lang]['opt_question_only'], callback_data="lopt_QuestionOnly"),
+                    types.InlineKeyboardButton(STRINGS[lang]['opt_both'], callback_data="lopt_Both")
+                )
+                bot.edit_message_text(STRINGS[lang]['lang_option_msg'], chat_id, call.message.message_id, reply_markup=markup)
+            else:
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), 
+                           types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
+                           types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="sec_4"))
+                markup.add(types.InlineKeyboardButton(STRINGS[lang]['back'], callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
+                bot.edit_message_text(STRINGS[lang]['set_select'], chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
         elif mode == "review":
             markup = types.InlineKeyboardMarkup(row_width=1)
             markup.add(types.InlineKeyboardButton("🔍 አጠቃላይ ኦዲት (Full Audit)", callback_data="rev_FullAudit"),
@@ -344,6 +378,15 @@ def handle_callbacks(call):
             markup.add(types.InlineKeyboardButton("🔀 ምርጫህን አሰባጥር (Custom Mix)", callback_data="nt_custom_mix"))
             markup.add(types.InlineKeyboardButton(STRINGS[lang]['back'], callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
             bot.edit_message_text("✨ **የኖት አይነት ይምረጡ ወይም ስብጥር ያዝዙ**", chat_id, call.message.message_id, reply_markup=markup)
+
+    # የቋንቋ ምርጫ አያያዝ (ከምዕራፍ በኋላ የሚመጣ)
+    elif data.startswith('lopt_'):
+        user_selection[chat_id]['lang_output_option'] = data.split('_')[1]
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="sec_1"), 
+                   types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="sec_2"),
+                   types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="sec_4"))
+        bot.edit_message_text(STRINGS[lang]['set_select'], chat_id, call.message.message_id, reply_markup=markup)
 
     elif data.startswith('sec_'):
         user_selection[chat_id]['num_sets'] = int(data.split('_')[1])
@@ -487,6 +530,17 @@ def generate_final_content(message):
         else:
             lang_rule = lang_map[selected_lang]
 
+        # የቋንቋ ምርጫዎችን ወደ AI መመሪያ (Prompt) መጨመር
+        lang_output_instruction = ""
+        if 'lang_output_option' in data:
+            opt = data['lang_output_option']
+            if opt == "PassageOnly":
+                lang_output_instruction = "IMPORTANT: Provide ONLY the Reading Passage based on the context. Do NOT generate any questions."
+            elif opt == "QuestionOnly":
+                lang_output_instruction = "IMPORTANT: Generate ONLY the questions. Do NOT include the reading passage text itself."
+            elif opt == "Both":
+                lang_output_instruction = "IMPORTANT: Provide the Reading Passage FIRST, followed by the related questions."
+
         if data['mode'] == "exam":
             prompt = f"""You are an expert Ethiopian National Examiner.
             STRICT COMPLIANCE:
@@ -494,7 +548,8 @@ def generate_final_content(message):
             2. USER COMMAND: Create exam structure: {data['tos_config']}. If 'auto', decide a standard structure.
             3. LANGUAGE: {lang_rule}
             4. SYMBOLS: ALL formulas in LaTeX using $inline$ or $$display$$.
-            5. OUTPUT: {data['num_sets']} different sets. Include TOS, Exam, and Answer Key. Page break using '---PAGE BREAK---'."""
+            5. LANGUAGE SUBJECT RULE: {lang_output_instruction}
+            6. OUTPUT: {data['num_sets']} different sets. Include TOS, Exam, and Answer Key. Page break using '---PAGE BREAK---'."""
         
         elif data['mode'] == "review":
             review_type = data['review_type']
