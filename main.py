@@ -3,7 +3,8 @@ import telebot
 from telebot import types
 import google.generativeai as genai
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, Inches
+from docx.enum.section import WD_ORIENT
 import io
 import sqlite3
 import threading
@@ -57,6 +58,7 @@ STRINGS = {
         'choose_mode': "🛠 **ምን ማዘጋጀት ይፈልጋሉ?**",
         'exam': "📝 የፈተና ዝግጅት",
         'note': "📚 የማስተማሪያ ኖት",
+        'lesson': "📅 ዕለታዊ የትምህርት ዕቅድ",
         'review': "🔍 የመፅሀፍ ግምገማ",
         'back': "⬅️ ተመለስ",
         'sub_select': "📚 **ትምህርት ይምረጡ**",
@@ -77,6 +79,7 @@ STRINGS = {
         'choose_mode': "🛠 **Maal qopheessuu barbaaddu?**",
         'exam': "📝 Qophii Qorumsaa",
         'note': "📚 Nootii Barsiisaa",
+        'lesson': "📅 Karoora Barnootaa",
         'review': "🔍 Gamaggama Kitaabaa",
         'back': "⬅️ Duubatti",
         'sub_select': "📚 **Gosa Barnootaa Filadhu**",
@@ -97,6 +100,7 @@ STRINGS = {
         'choose_mode': "🛠 **እንታይ ክዳሎ ይደልዩ?**",
         'exam': "📝 ምድላው ፈተና",
         'note': "📚 ናይ መምህር ኖት",
+        'lesson': "📅 ናይ መዓልቲ ትምህርቲ ትልሚ",
         'review': "🔍 ገምጋም መጽሓፍ",
         'back': "⬅️ ተመለስ",
         'sub_select': "📚 **ትምህርቲ ይምረጡ**",
@@ -117,6 +121,7 @@ STRINGS = {
         'choose_mode': "🛠 **Maxaad rabtaa inaad diyaariso?**",
         'exam': "📝 Diyaarinta Imtixaanka",
         'note': "📚 Qoraalka Casharka",
+        'lesson': "📅 Qorshe Cashar Maalinle",
         'review': "🔍 Dib-u-eegista Buugga",
         'back': "⬅️ Dib u laabo",
         'sub_select': "📚 **Dooro Maaddada**",
@@ -137,6 +142,7 @@ STRINGS = {
         'choose_mode': "🛠 **What would you like to prepare?**",
         'exam': "📝 Exam Preparation",
         'note': "📚 Teacher Notes",
+        'lesson': "📅 Daily Lesson Plan",
         'review': "🔍 Textbook Review",
         'back': "⬅️ Back",
         'sub_select': "📚 **Select Subject**",
@@ -243,6 +249,7 @@ def handle_callbacks(call):
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(types.InlineKeyboardButton(STRINGS[lang]['exam'], callback_data="set_mode_exam"),
                    types.InlineKeyboardButton(STRINGS[lang]['note'], callback_data="set_mode_note"),
+                   types.InlineKeyboardButton(STRINGS[lang]['lesson'], callback_data="set_mode_lesson"),
                    types.InlineKeyboardButton(STRINGS[lang]['review'], callback_data="set_mode_review"))
         markup.add(types.InlineKeyboardButton(STRINGS[lang]['back'], callback_data="start_back"))
         bot.edit_message_text(STRINGS[lang]['choose_mode'], chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
@@ -280,6 +287,9 @@ def handle_callbacks(call):
         elif mode == "review":
             call.data = "tp_Review"
             handle_callbacks(call)
+        elif mode == "lesson":
+            call.data = "tp_LessonPlan"
+            handle_callbacks(call)
         else:
             call.data = "tp_Note"
             handle_callbacks(call)
@@ -296,6 +306,9 @@ def handle_callbacks(call):
         elif mode == "review":
             call.data = "df_Standard"
             handle_callbacks(call)
+        elif mode == "lesson":
+            call.data = "df_SMASE"
+            handle_callbacks(call)
         else:
             call.data = "df_Normal"
             handle_callbacks(call)
@@ -311,6 +324,9 @@ def handle_callbacks(call):
             bot.edit_message_text("🧠 **Bloom's Taxonomy**", chat_id, call.message.message_id, reply_markup=markup)
         elif mode == "review":
             call.data = "bl_Audit"
+            handle_callbacks(call)
+        elif mode == "lesson":
+            call.data = "bl_ActiveLearning"
             handle_callbacks(call)
         else:
             call.data = "bl_Note"
@@ -341,7 +357,15 @@ def handle_callbacks(call):
         # ቋንቋ ከሆነ ምርጫ ማምጣት (ለአማርኛ፣ እንግሊዝኛ፣ አፋን ኦሮሞ)
         is_language = subject.lower() in ["amharic", "english", "afaan oromoo"]
         
-        if mode == "exam":
+        if mode == "lesson":
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                types.InlineKeyboardButton("📄 አንድ ገፅ ብቻ", callback_data="pgtype_single"),
+                types.InlineKeyboardButton("📖 የገፅ ክልል (ከ-እስ)", callback_data="pgtype_range")
+            )
+            bot.edit_message_text("🔢 **ገፅ እንዴት መምረጥ ይፈልጋሉ?**", chat_id, call.message.message_id, reply_markup=markup)
+
+        elif mode == "exam":
             if is_language:
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 markup.add(
@@ -378,6 +402,13 @@ def handle_callbacks(call):
             markup.add(types.InlineKeyboardButton("🔀 ምርጫህን አሰባጥር (Custom Mix)", callback_data="nt_custom_mix"))
             markup.add(types.InlineKeyboardButton(STRINGS[lang]['back'], callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
             bot.edit_message_text("✨ **የኖት አይነት ይምረጡ ወይም ስብጥር ያዝዙ**", chat_id, call.message.message_id, reply_markup=markup)
+
+    # የገፅ ምርጫ አያያዝ
+    elif data.startswith('pgtype_'):
+        user_selection[chat_id]['page_type'] = data.split('_')[1]
+        msg_text = "🖋 **እባክዎ የገፅ ቁጥሩን ይጻፉ (ለምሳሌ፦ 12):**" if data == "pgtype_single" else "🖋 **እባክዎ የገፅ ክልሉን ይጻፉ (ለምሳሌ፦ 12-15):**"
+        msg = bot.send_message(chat_id, msg_text)
+        bot.register_next_step_handler(msg, final_generation_trigger)
 
     # የቋንቋ ምርጫ አያያዝ (ከምዕራፍ በኋላ የሚመጣ)
     elif data.startswith('lopt_'):
@@ -480,6 +511,13 @@ def process_manual_chapter(message):
                    types.InlineKeyboardButton("🧠 ፔዳጎጂ እና SMASE ግምገማ", callback_data="rev_Pedagogy"),
                    types.InlineKeyboardButton("📝 የጥያቄዎች ጥራት ኦዲት", callback_data="rev_Assessment"))
         bot.send_message(chat_id, "🧐 **የግምገማ ዘርፍ ይምረጡ**", reply_markup=markup)
+    elif mode == "lesson":
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("📄 አንድ ገፅ ብቻ", callback_data="pgtype_single"),
+            types.InlineKeyboardButton("📖 የገፅ ክልል (ከ-እስ)", callback_data="pgtype_range")
+        )
+        bot.send_message(chat_id, "🔢 **ገፅ እንዴት መምረጥ ይፈልጋሉ?**", reply_markup=markup)
     else:
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(types.InlineKeyboardButton("1. 🎯 አላማና መግቢያ", callback_data="nt_1_Objectives"),
@@ -541,7 +579,34 @@ def generate_final_content(message):
             elif opt == "Both":
                 lang_output_instruction = "IMPORTANT: Provide the Reading Passage FIRST, followed by the related questions."
 
-        if data['mode'] == "exam":
+        if data['mode'] == "lesson":
+            prompt = f"""You are a Professional Curriculum Developer specializing in SMASE (Active Learning).
+            TASK: Create a DAILY LESSON PLAN based on Chapter: {data['chapter']} and Page: {data.get('tos_config', 'auto')}.
+            
+            STRICT REQUIREMENTS:
+            1. LANGUAGE: {lang_rule}
+            2. PEDAGOGY: Follow SMASE (Strengthening of Mathematics and Science in Education). Ensure it's learner-centered.
+            
+            STRUCTURE TO FOLLOW (Be short, specific, and precise):
+            - Objectives (አላማዎች)
+            - Significance (አስፈላጊነት)
+            - Prior Knowledge (ቀዳሚ ዕዉቀት)
+            - Competency (አጥጋቢ የመማር ብቃት)
+            
+            DIFFERENTIATED SUPPORT (Provide short examples for each):
+            - For High Achievers (ላቅ ባለ ደረጃ ላሉ)
+            - For Average Students (በመካከለኛ ደረጃ ላሉ)
+            - For Low Achievers (ዝቅ ባለ ደረጃ ላሉ)
+            - For Special Needs (ልዩ ፍላጎት ላላቸው)
+            
+            TABLE CONTENT (Generate content for 9 columns):
+            - Teacher Activity: Short notes, facilitating.
+            - Student Activity: Active learning, hands-on.
+            - Assessment: Specific examples.
+            - Aids: Based on daily topic.
+            """
+
+        elif data['mode'] == "exam":
             prompt = f"""You are an expert Ethiopian National Examiner.
             STRICT COMPLIANCE:
             1. SOURCE: Use ONLY the provided PDF. Focus on Chapter: {data['chapter']}, Bloom Level: {data['bloom']}, Difficulty: {data['diff']}.
@@ -582,26 +647,57 @@ def generate_final_content(message):
         raw_content = response.text.replace("###", "").replace("##", "")
         
         doc = Document()
-        title = doc.add_heading(f"{data['subject']} - Grade {data['grade']} {data['mode'].upper()}", 0)
-        title.alignment = 1 
+        
+        if data['mode'] == "lesson":
+            # ዕለታዊ የትምህርት ዕቅድ ፎርማት
+            section = doc.sections[0]
+            section.orientation = WD_ORIENT.LANDSCAPE
+            new_width, new_height = section.page_height, section.page_width
+            section.page_width = new_width
+            section.page_height = new_height
 
-        if data['mode'] == "review":
-            meta = doc.add_paragraph()
-            meta.add_run(f"Audit Scope: {data['review_type']}\nPages Reviewed: {data.get('page_range', 'All')}\n").bold = True
-
-        sections = raw_content.split('\n\n')
-        for section in sections:
-            clean_sec = section.strip()
-            if not clean_sec: continue
+            header = doc.add_paragraph("ዕለታዊ የትምህርት ዕቅድ", style='Header')
+            header.alignment = 1
             
-            if clean_sec.startswith("[Page") or clean_sec.startswith("Page") or ":" in clean_sec.split('\n')[0]:
-                p = doc.add_paragraph()
-                run = p.add_run(clean_sec)
-                run.bold = True
-            elif "|" in clean_sec: 
-                doc.add_paragraph(clean_sec) 
-            else:
-                doc.add_paragraph(clean_sec)
+            info = doc.add_paragraph()
+            info.add_run(f"የመምህሩ ስም: እስራኤል አማረ\t\t\t\tየት/ቤቱ ስም: የካ ተራራ ቅድመ አንደኛ፣ አንደኛ እና መካከለኛ ደረጃ ትምህርት ቤት\n")
+            info.add_run(f"የትም ዓይነት: {data['subject']}\t\t\t\tምዕራፍ: {data['chapter']}\n")
+            info.add_run(f"የክፍል ደረጃ: {data['grade']}\t\t\t\tየዕለቱ ገፅ: {data.get('tos_config', '')}")
+
+            # ሰንጠረዡን መፍጠር (9 ዓምዶች)
+            table = doc.add_table(rows=1, cols=9)
+            table.style = 'Table Grid'
+            hdr_cells = table.rows[0].cells
+            cols = ["ቅደም ተከተል", "ክፍለ ጊዜ", "ይዘት", "ገፅ", "መምህር ተግባር", "ተማሪ ተግባር", "ምዘና", "መርጃ", "ምርመራ"]
+            for i, name in enumerate(cols): hdr_cells[i].text = name
+
+            # AI የመለሰውን ይዘት ወደ ሰነዱ ማዛወር
+            doc.add_paragraph("\n" + raw_content)
+            
+            # ፊርማ
+            footer = doc.add_paragraph("\nመምህር: እስራኤል አማረ _________ \t የት/ክፍል ተጠሪ: አስመራወርቅ ሀይሌ _________ \t ም/ር/መ/ር: ከበደ ተስፋዪ _________")
+        
+        else:
+            title = doc.add_heading(f"{data['subject']} - Grade {data['grade']} {data['mode'].upper()}", 0)
+            title.alignment = 1 
+
+            if data['mode'] == "review":
+                meta = doc.add_paragraph()
+                meta.add_run(f"Audit Scope: {data['review_type']}\nPages Reviewed: {data.get('page_range', 'All')}\n").bold = True
+
+            sections = raw_content.split('\n\n')
+            for section in sections:
+                clean_sec = section.strip()
+                if not clean_sec: continue
+                
+                if clean_sec.startswith("[Page") or clean_sec.startswith("Page") or ":" in clean_sec.split('\n')[0]:
+                    p = doc.add_paragraph()
+                    run = p.add_run(clean_sec)
+                    run.bold = True
+                elif "|" in clean_sec: 
+                    doc.add_paragraph(clean_sec) 
+                else:
+                    doc.add_paragraph(clean_sec)
         
         file_stream = io.BytesIO()
         doc.save(file_stream)
