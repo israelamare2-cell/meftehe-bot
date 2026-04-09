@@ -11,10 +11,10 @@ import threading
 from flask import Flask
 import time
 import requests
+import random  # አዲስ የተጨመረ - API Keys ለማፈራረቅ
 
 # --- 1. ኮንፊገሬሽን ---
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 CHANNEL_ID = "@digital_mat"
 
 GITHUB_USER = "israelamare2-cell"
@@ -23,11 +23,9 @@ RELEASE_TAG = "v1"
 
 GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/"
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-
-# በአዲሱ ሞዴል ስሪት ተተክቷል
-model = genai.GenerativeModel('gemini-2.5-flash')
+# የ API Keys ዝግጅት (Load Balancing)
+GEMINI_API_KEYS_STR = os.getenv('GEMINI_API_KEYS', os.getenv('GEMINI_API_KEY', ''))
+API_KEY_LIST = [k.strip() for k in GEMINI_API_KEYS_STR.split(',')] if GEMINI_API_KEYS_STR else []
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
@@ -204,8 +202,7 @@ def start(message):
         bot.send_message(chat_id, "⚠️ ቦቱን ለመጠቀም መጀመሪያ ቻናላችንን ይቀላቀሉ!", reply_markup=markup)
         return
 
-    # መጀመሪያ ቋንቋ ማስመረጥ
-    user_selection[chat_id] = {'counts': {}, 'lang': 'am'} # Default
+    user_selection[chat_id] = {'counts': {}, 'lang': 'am'}
     markup = types.InlineKeyboardMarkup(row_width=2)
     btns = [
         types.InlineKeyboardButton("አማርኛ", callback_data="lang_am"),
@@ -222,7 +219,6 @@ def handle_callbacks(call):
     chat_id = call.message.chat.id
     data = call.data
     
-    # የቋንቋ ምርጫ አያያዝ
     if data.startswith("lang_"):
         lang_code = data.split('_')[1]
         user_selection[chat_id]['lang'] = lang_code
@@ -353,8 +349,6 @@ def handle_callbacks(call):
         user_selection[chat_id]['chapter'] = data.split('_')[1]
         mode = user_selection[chat_id]['mode']
         subject = user_selection[chat_id]['subject']
-        
-        # ቋንቋ ከሆነ ምርጫ ማምጣት (ለአማርኛ፣ እንግሊዝኛ፣ አፋን ኦሮሞ)
         is_language = subject.lower() in ["amharic", "english", "afaan oromoo"]
         
         if mode == "lesson":
@@ -403,14 +397,12 @@ def handle_callbacks(call):
             markup.add(types.InlineKeyboardButton(STRINGS[lang]['back'], callback_data=f"bl_{user_selection[chat_id]['bloom']}"))
             bot.edit_message_text("✨ **የኖት አይነት ይምረጡ ወይም ስብጥር ያዝዙ**", chat_id, call.message.message_id, reply_markup=markup)
 
-    # የገፅ ምርጫ አያያዝ
     elif data.startswith('pgtype_'):
         user_selection[chat_id]['page_type'] = data.split('_')[1]
         msg_text = "🖋 **እባክዎ የገፅ ቁጥሩን ይጻፉ (ለምሳሌ፦ 12):**" if data == "pgtype_single" else "🖋 **እባክዎ የገፅ ክልሉን ይጻፉ (ለምሳሌ፦ 12-15):**"
         msg = bot.send_message(chat_id, msg_text)
         bot.register_next_step_handler(msg, final_generation_trigger)
 
-    # የቋንቋ ምርጫ አያያዝ (ከምዕራፍ በኋላ የሚመጣ)
     elif data.startswith('lopt_'):
         user_selection[chat_id]['lang_output_option'] = data.split('_')[1]
         markup = types.InlineKeyboardMarkup()
@@ -547,7 +539,6 @@ def generate_final_content(message):
     bot.send_message(chat_id, f"🚀 መጽሐፉን አግኝቻለሁ! አሁን {data['mode']} እያዘጋጀሁ ነው...")
     
     try:
-        # ቋንቋን መሰረት ያደረገ የ AI ትዕዛዝ (Prompt Rule)
         selected_lang = data.get('lang', 'am')
         lang_map = {
             'am': "STRICTLY in AMHARIC language.",
@@ -557,7 +548,6 @@ def generate_final_content(message):
             'en': "STRICTLY in ENGLISH language."
         }
         
-        # የትምህርት አይነቱ ራሱ ቋንቋ ከሆነ ቅድሚያ ይሰጠዋል
         target_subject = data['subject'].lower()
         if target_subject == "afaan oromoo":
             lang_rule = lang_map['or']
@@ -568,7 +558,6 @@ def generate_final_content(message):
         else:
             lang_rule = lang_map[selected_lang]
 
-        # የቋንቋ ምርጫዎችን ወደ AI መመሪያ (Prompt) መጨመር
         lang_output_instruction = ""
         if 'lang_output_option' in data:
             opt = data['lang_output_option']
@@ -585,25 +574,29 @@ def generate_final_content(message):
             
             STRICT REQUIREMENTS:
             1. LANGUAGE: {lang_rule}
-            2. PEDAGOGY: Follow SMASE (Strengthening of Mathematics and Science in Education). Ensure it's learner-centered.
+            2. PEDAGOGY: Follow SMASE (Active Learning). Ensure it's learner-centered.
+            3. STYLE: Use VERY SHORT BULLET POINTS. NO long sentences.
+            4. FORMAT: Use a CLEAR TABLE for the Teacher/Student activity sections.
             
-            STRUCTURE TO FOLLOW (Be short, specific, and precise):
+            HEADER INFO:
+            - School: የካ ተራራ ቅድመ አንደኛ፣ አንደኛ እና መካከለኛ ደረጃ ትምህርት ቤት
+            - Teacher: እስራኤል አማረ
+            
+            SECTIONS TO INCLUDE (Short & Precise):
             - Objectives (አላማዎች)
             - Significance (አስፈላጊነት)
             - Prior Knowledge (ቀዳሚ ዕዉቀት)
             - Competency (አጥጋቢ የመማር ብቃት)
             
-            DIFFERENTIATED SUPPORT (Provide short examples for each):
+            TABLE STRUCTURE:
+            Generate a table with these columns: [የመማር ማስተማር ቅደም ተከተል, ክፍለ ጊዜ, ይዘት, የመምህሩ ተግባር, የተማሪ ተግባር, ምዘና, የመርጃ መሣሪያ]
+            (Fill the columns with short bulleted points like: • ሰላምታ • ክለሳ • ገለጻ)
+            
+            DIFFERENTIATED SUPPORT (Short examples):
             - For High Achievers (ላቅ ባለ ደረጃ ላሉ)
             - For Average Students (በመካከለኛ ደረጃ ላሉ)
             - For Low Achievers (ዝቅ ባለ ደረጃ ላሉ)
-            - For Special Needs (ልዩ ፍላጎት ላላቸው)
-            
-            TABLE CONTENT (Generate content for 9 columns):
-            - Teacher Activity: Short notes, facilitating.
-            - Student Activity: Active learning, hands-on.
-            - Assessment: Specific examples.
-            - Aids: Based on daily topic.
+            - Special Needs (ልዩ ፍላጎት)
             """
 
         elif data['mode'] == "exam":
@@ -642,8 +635,39 @@ def generate_final_content(message):
 
         with open(file_path, "rb") as f:
             file_data = f.read()
+
+        # ==============================================================
+        # ANTI-CRASH (RATE LIMIT) ማስተካከያ የተጨመረበት ክፍል
+        # ==============================================================
+        max_retries = 4
+        response = None
         
-        response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
+        for attempt in range(max_retries):
+            try:
+                # 1. በዘፈቀደ ቁልፍ መምረጥ (Load Balancing)
+                if API_KEY_LIST:
+                    current_key = random.choice(API_KEY_LIST)
+                    genai.configure(api_key=current_key)
+                
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                
+                # 2. AIውን ማዘዝ
+                response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
+                break # ተሳክቷል! ከ Loop ውጣ
+                
+            except Exception as e:
+                error_text = str(e).lower()
+                # ኤረሩ የትራፊክ መጨናነቅ ከሆነ
+                if "429" in error_text or "quota" in error_text or "rate limit" in error_text or "503" in error_text:
+                    if attempt < max_retries - 1:
+                        wait_time = 5 * (attempt + 1)
+                        bot.send_message(chat_id, f"⏳ የሰዎች መብዛት (Traffic) አጋጥሟል። ከ {wait_time} ሰከንድ በኋላ በድጋሚ እየሞከርኩ ነው፣ እባክዎ ይጠብቁ...")
+                        time.sleep(wait_time)
+                        continue
+                # የትራፊክ ካልሆነ ወይም ሙከራው ካለቀ ኤረሩን አውጣ
+                raise Exception(f"ከ{max_retries} ሙከራዎች በኋላ አልተሳካም። እባክዎ ትንሽ ቆይተው ይሞክሩ። (Error: {str(e)[:50]})")
+        # ==============================================================
+
         raw_content = response.text.replace("###", "").replace("##", "")
         
         doc = Document()
@@ -664,18 +688,11 @@ def generate_final_content(message):
             info.add_run(f"የትም ዓይነት: {data['subject']}\t\t\t\tምዕራፍ: {data['chapter']}\n")
             info.add_run(f"የክፍል ደረጃ: {data['grade']}\t\t\t\tየዕለቱ ገፅ: {data.get('tos_config', '')}")
 
-            # ሰንጠረዡን መፍጠር (9 ዓምዶች)
-            table = doc.add_table(rows=1, cols=9)
-            table.style = 'Table Grid'
-            hdr_cells = table.rows[0].cells
-            cols = ["ቅደም ተከተል", "ክፍለ ጊዜ", "ይዘት", "ገፅ", "መምህር ተግባር", "ተማሪ ተግባር", "ምዘና", "መርጃ", "ምርመራ"]
-            for i, name in enumerate(cols): hdr_cells[i].text = name
-
-            # AI የመለሰውን ይዘት ወደ ሰነዱ ማዛወር
+            # AI የመለሰውን ይዘት (ሰንጠረዡን ጨምሮ) ወደ ሰነዱ ማዛወር
             doc.add_paragraph("\n" + raw_content)
             
             # ፊርማ
-            footer = doc.add_paragraph("\nመምህር: እስራኤል አማረ _________ \t የት/ክፍል ተጠሪ: አስመራወርቅ ሀይሌ _________ \t ም/ር/መ/ር: ከበደ ተስፋዪ _________")
+            doc.add_paragraph("\nመምህር: እስራኤል አማረ _________ \t የት/ክፍል ተጠሪ: አስመራወርቅ ሀይሌ _________ \t ም/ር/መ/ር: ከበደ ተስፋዪ _________")
         
         else:
             title = doc.add_heading(f"{data['subject']} - Grade {data['grade']} {data['mode'].upper()}", 0)
@@ -710,17 +727,21 @@ def generate_final_content(message):
 
 # --- 7. ሰርቨር እና ቦት ማስነሻ ---
 @app.route('/')
-def home(): return "Meftehe Bot is Online!"
+def home(): 
+    return "Meftehe Bot is Online!"
 
 def run_bot():
-    try:
-        bot.remove_webhook()
-        time.sleep(2)
-        bot.infinity_polling(skip_pending=True, timeout=60)
-    except Exception as e:
-        print(f"❌ Bot Polling Error: {e}")
+    while True:
+        try:
+            bot.remove_webhook()
+            time.sleep(2)
+            bot.infinity_polling(skip_pending=True, timeout=60)
+        except Exception as e:
+            print(f"❌ Bot Polling Error: {e}")
+            time.sleep(5) # ኤረር ቢመጣም ከ5 ሰከንድ በኋላ ቦቱን እንደገና እንዲያነሳው
 
 if __name__ == "__main__":
-    threading.Thread(target=run_bot, daemon=True).start()
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
