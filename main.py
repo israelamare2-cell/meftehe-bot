@@ -11,7 +11,8 @@ import threading
 from flask import Flask
 import time
 import requests
-import random  # አዲስ የተጨመረ - API Keys ለማፈራረቅ
+import random
+import hashlib  # አዲስ የተጨመረ - ለ Smart Cache
 
 # --- 1. ኮንፊገሬሽን ---
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -30,14 +31,43 @@ API_KEY_LIST = [k.strip() for k in GEMINI_API_KEYS_STR.split(',')] if GEMINI_API
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
 
-# --- 2. ዳታቤዝ ---
+# --- 2. ዳታቤዝ እና SMART CACHE ---
 def init_db():
     conn = sqlite3.connect('meftehe_national_data.db', check_same_thread=False)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS exam_logs
                  (chat_id TEXT, subject TEXT, grade TEXT, exam_type TEXT,
                  sets TEXT, timestamp TEXT)''')
+    
+    # አዲስ የተጨመረ - የ Smart Cache ሠንጠረዥ
+    c.execute('''CREATE TABLE IF NOT EXISTS gemini_cache 
+                 (prompt_hash TEXT PRIMARY KEY, response_text TEXT)''')
+    
     conn.commit()
+    conn.close()
+
+# አዲስ የተጨመሩ የ Cache ፈንክሽኖች
+def get_cached_response(prompt_text, file_bytes):
+    # ጥያቄውን እና የፋይሉን ይዘት አጣምሮ Unique ID (Hash) ይሰራል
+    file_hash = hashlib.md5(file_bytes).hexdigest()
+    combined = prompt_text + file_hash
+    hash_val = hashlib.md5(combined.encode()).hexdigest()
+    
+    conn = sqlite3.connect('meftehe_national_data.db', check_same_thread=False)
+    c = conn.cursor()
+    c.execute("SELECT response_text FROM gemini_cache WHERE prompt_hash=?", (hash_val,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else None, hash_val
+
+def save_to_cache(hash_val, response_text):
+    conn = sqlite3.connect('meftehe_national_data.db', check_same_thread=False)
+    c = conn.cursor()
+    try:
+        c.execute("INSERT OR REPLACE INTO gemini_cache VALUES (?, ?)", (hash_val, response_text))
+        conn.commit()
+    except:
+        pass
     conn.close()
 
 init_db()
@@ -571,13 +601,11 @@ def generate_final_content(message):
         if data['mode'] == "lesson":
             prompt = f"""You are a Professional Curriculum Developer specializing in SMASE (Active Learning).
             TASK: Create a DAILY LESSON PLAN based on Chapter: {data['chapter']} and Page: {data.get('tos_config', 'auto')}.
-            
             STRICT REQUIREMENTS:
             1. LANGUAGE: {lang_rule}
             2. PEDAGOGY: Follow SMASE (Active Learning). Ensure it's learner-centered.
             3. STYLE: Use VERY SHORT BULLET POINTS. NO long sentences.
             4. FORMAT: Use a CLEAR TABLE for the Teacher/Student activity sections.
-            
             HEADER INFO:
             - School: የካ ተራራ ቅድመ አንደኛ፣ አንደኛ እና መካከለኛ ደረጃ ትምህርት ቤት
             - Teacher: እስራኤል አማረ
@@ -622,7 +650,6 @@ def generate_final_content(message):
                - Format: [Page X]: List specific errors (factual, grammatical, or pedagogical) or improvement points.
             3. CRITICAL ERRORS TABLE: A table showing [Page #], [Current Content], [Suggested Correction].
             4. PEDAGOGICAL ALIGNMENT: How it fits SMASE and 21st Century Skills.
-            
             FORMATTING:
             - Use Bold for Page numbers.
             - Use Tables for corrections using '|' symbols.
@@ -637,39 +664,51 @@ def generate_final_content(message):
             file_data = f.read()
 
         # ==============================================================
-        # ANTI-CRASH (RATE LIMIT) ማስተካከያ የተጨመረበት ክፍል
+        # 🌟 አዲስ የተጨመረ፡ SMART CACHE እና MULTI-KEY ROTATION
         # ==============================================================
-        max_retries = 4
-        response = None
+        wait_msg = bot.send_message(chat_id, "⏳ ጥያቄዎን እያመነጨሁ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ።")
         
-        for attempt in range(max_retries):
-            try:
-                # 1. በዘፈቀደ ቁልፍ መምረጥ (Load Balancing)
-                if API_KEY_LIST:
-                    current_key = random.choice(API_KEY_LIST)
-                    genai.configure(api_key=current_key)
-                
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                
-                # 2. AIውን ማዘዝ
-                response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
-                break # ተሳክቷል! ከ Loop ውጣ
-                
-            except Exception as e:
-                error_text = str(e).lower()
-                # ኤረሩ የትራፊክ መጨናነቅ ከሆነ
-                if "429" in error_text or "quota" in error_text or "rate limit" in error_text or "503" in error_text:
-                    if attempt < max_retries - 1:
-                        wait_time = 5 * (attempt + 1)
-                        bot.send_message(chat_id, f"⏳ የሰዎች መብዛት (Traffic) አጋጥሟል። ከ {wait_time} ሰከንድ በኋላ በድጋሚ እየሞከርኩ ነው፣ እባክዎ ይጠብቁ...")
-                        time.sleep(wait_time)
+        cached_response, prompt_hash = get_cached_response(prompt, file_data)
+        
+        if cached_response:
+            bot.edit_message_text("🚀 መረጃው ከዚህ ቀደም ስለተጠየቀ ከዳታቤዝ (Cache) በፍጥነት ተገኝቷል!", chat_id, wait_msg.message_id)
+            raw_content = cached_response
+        else:
+            max_retries = len(API_KEY_LIST) if API_KEY_LIST else 1
+            success = False
+            current_key_index = 0
+            
+            # እያንዳንዱን ቁልፍ ቢበዛ 2 ጊዜ እንዲሞክር ማድረግ
+            for attempt in range(max_retries * 2):
+                try:
+                    if API_KEY_LIST:
+                        current_key = API_KEY_LIST[current_key_index % len(API_KEY_LIST)]
+                        genai.configure(api_key=current_key)
+                        
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
+                    
+                    raw_content = response.text.replace("###", "").replace("##", "")
+                    
+                    # የተገኘውን አዲስ መልስ ወደ ዳታቤዝ (Cache) ማስቀመጥ
+                    save_to_cache(prompt_hash, raw_content)
+                    success = True
+                    break 
+                    
+                except Exception as e:
+                    error_text = str(e).lower()
+                    if "429" in error_text or "quota" in error_text or "rate limit" in error_text or "400" in error_text or "503" in error_text:
+                        bot.edit_message_text(f"⚠️ ቁልፍ (Key {current_key_index + 1}) ተጨናንቋል። ወደ ሚቀጥለው እየቀየርኩ ነው...", chat_id, wait_msg.message_id)
+                        current_key_index += 1 
+                        time.sleep(2)
                         continue
-                # የትራፊክ ካልሆነ ወይም ሙከራው ካለቀ ኤረሩን አውጣ
-                raise Exception(f"ከ{max_retries} ሙከራዎች በኋላ አልተሳካም። እባክዎ ትንሽ ቆይተው ይሞክሩ። (Error: {str(e)[:50]})")
+                    else:
+                        raise Exception(f"ስህተት አጋጥሟል፦ {str(e)[:50]}")
+                        
+            if not success:
+                raise Exception("⚠️ ይቅርታ፣ ሁሉም የ API ቁልፎች አሁን ላይ ተጨናንቀዋል። እባክዎ ከጥቂት ደቂቃዎች በኋላ ይሞክሩ።")
         # ==============================================================
 
-        raw_content = response.text.replace("###", "").replace("##", "")
-        
         doc = Document()
         
         if data['mode'] == "lesson":
@@ -720,6 +759,9 @@ def generate_final_content(message):
         doc.save(file_stream)
         file_stream.seek(0)
         file_stream.name = f"{data['subject']}_{data['mode']}.docx"
+        
+        # የቆየውን የ 'Wait' መልእክት አጥፍቶ ፋይሉን መላክ
+        bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_document(chat_id, file_stream, caption=f"✅ {data['mode'].capitalize()}ው በተሳካ ሁኔታ ተዘጋጅቷል።")
 
     except Exception as e:
