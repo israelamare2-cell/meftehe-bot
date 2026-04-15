@@ -31,6 +31,10 @@ API_KEY_LIST = [k.strip() for k in GEMINI_API_KEYS_STR.split(',')] if GEMINI_API
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
 
+# --- QR CODE ACCESS CONTROL (አዲስ የተጨመረ) ---
+AUTHORIZED_USERS = set()
+SECRET_PAYLOAD = "vip2026"
+
 # --- 2. ዳታቤዝ እና SMART CACHE ---
 def init_db():
     conn = sqlite3.connect('meftehe_national_data.db', check_same_thread=False)
@@ -225,6 +229,16 @@ def start(message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
+    # QR Code Payload Check (አዲስ የተጨመረ)
+    args = message.text.split()
+    if len(args) > 1 and args[1] == SECRET_PAYLOAD:
+        AUTHORIZED_USERS.add(user_id)
+
+    # Authorization Check
+    if user_id not in AUTHORIZED_USERS:
+        bot.send_message(chat_id, "🚫 **ይቅርታ፣ ቦቱን ለመጠቀም መጀመሪያ የቀረበውን የQR ኮድ ስካን ማድረግ አለብዎት!**")
+        return
+
     if not is_subscribed(user_id):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("📢 ቻናሉን ተቀላቀል (Join)", url="https://t.me/digital_mat"))
@@ -558,7 +572,7 @@ def generate_final_content(message):
     chat_id = message.chat.id
     data = user_selection.get(chat_id)
     if not data: return
-
+    
     bot.send_message(chat_id, "🔍 መፅሀፉን ከ GitHub ማከማቻዬ እየፈለግኩ ነው...")
     file_path = download_book_from_github(data['grade'], data['subject'])
     
@@ -570,36 +584,19 @@ def generate_final_content(message):
     
     try:
         selected_lang = data.get('lang', 'am')
-        lang_map = {
-            'am': "STRICTLY in AMHARIC language.",
-            'or': "STRICTLY in AFAAN OROMOO language using professional terms.",
-            'ti': "STRICTLY in TIGRIGNA language.",
-            'so': "STRICTLY in SOMALI language.",
-            'en': "STRICTLY in ENGLISH language."
-        }
+        lang_rule = "Use Amharic" if selected_lang == 'am' else f"Use {selected_lang}"
         
-        target_subject = data['subject'].lower()
-        if target_subject == "afaan oromoo":
-            lang_rule = lang_map['or']
-        elif target_subject == "amharic":
-            lang_rule = lang_map['am']
-        elif target_subject == "english":
-            lang_rule = lang_map['en']
-        else:
-            lang_rule = lang_map[selected_lang]
-
+        lang_output_option = data.get('lang_output_option', 'Both')
         lang_output_instruction = ""
-        if 'lang_output_option' in data:
-            opt = data['lang_output_option']
-            if opt == "PassageOnly":
-                lang_output_instruction = "IMPORTANT: Provide ONLY the Reading Passage based on the context. Do NOT generate any questions."
-            elif opt == "QuestionOnly":
-                lang_output_instruction = "IMPORTANT: Generate ONLY the questions. Do NOT include the reading passage text itself."
-            elif opt == "Both":
-                lang_output_instruction = "IMPORTANT: Provide the Reading Passage FIRST, followed by the related questions."
+        if lang_output_option == "PassageOnly":
+            lang_output_instruction = "Generate only a reading passage based on the content. No questions."
+        elif lang_output_option == "QuestionOnly":
+            lang_output_instruction = "Generate only comprehension questions. No passage."
+        else:
+            lang_output_instruction = "Generate both a reading passage and relevant questions."
 
         if data['mode'] == "lesson":
-            prompt = f"""You are a Professional Curriculum Developer specializing in SMASE (Active Learning).
+            prompt = f"""You are a Master Curriculum Developer specializing in SMASE (Active Learning).
             TASK: Create a DAILY LESSON PLAN based on Chapter: {data['chapter']} and Page: {data.get('tos_config', 'auto')}.
             STRICT REQUIREMENTS:
             1. LANGUAGE: {lang_rule}
@@ -609,24 +606,19 @@ def generate_final_content(message):
             HEADER INFO:
             - School: የካ ተራራ ቅድመ አንደኛ፣ አንደኛ እና መካከለኛ ደረጃ ትምህርት ቤት
             - Teacher: እስራኤል አማረ
-            
             SECTIONS TO INCLUDE (Short & Precise):
             - Objectives (አላማዎች)
             - Significance (አስፈላጊነት)
             - Prior Knowledge (ቀዳሚ ዕዉቀት)
             - Competency (አጥጋቢ የመማር ብቃት)
-            
-            TABLE STRUCTURE:
-            Generate a table with these columns: [የመማር ማስተማር ቅደም ተከተል, ክፍለ ጊዜ, ይዘት, የመምህሩ ተግባር, የተማሪ ተግባር, ምዘና, የመርጃ መሣሪያ]
+            TABLE STRUCTURE: Generate a table with these columns: [የመማር ማስተማር ቅደም ተከተል, ክፍለ ጊዜ, ይዘት, የመምህሩ ተግባር, የተማሪ ተግባር, ምዘና, የመርጃ መሣሪያ]
             (Fill the columns with short bulleted points like: • ሰላምታ • ክለሳ • ገለጻ)
-            
             DIFFERENTIATED SUPPORT (Short examples):
             - For High Achievers (ላቅ ባለ ደረጃ ላሉ)
             - For Average Students (በመካከለኛ ደረጃ ላሉ)
             - For Low Achievers (ዝቅ ባለ ደረጃ ላሉ)
             - Special Needs (ልዩ ፍላጎት)
             """
-
         elif data['mode'] == "exam":
             prompt = f"""You are an expert Ethiopian National Examiner.
             STRICT COMPLIANCE:
@@ -635,18 +627,17 @@ def generate_final_content(message):
             3. LANGUAGE: {lang_rule}
             4. SYMBOLS: ALL formulas in LaTeX using $inline$ or $$display$$.
             5. LANGUAGE SUBJECT RULE: {lang_output_instruction}
-            6. OUTPUT: {data['num_sets']} different sets. Include TOS, Exam, and Answer Key. Page break using '---PAGE BREAK---'."""
-        
+            6. OUTPUT: {data['num_sets']} different sets. Include TOS, Exam, and Answer Key.
+            Page break using '---PAGE BREAK---'."""
         elif data['mode'] == "review":
             review_type = data['review_type']
             page_range = data.get('page_range', 'specified chapters')
             prompt = f"""You are a Precise Curriculum Auditor.
             TASK: Conduct a PAGE-BY-PAGE Audit of the PDF for Page Range/Chapter: {page_range} / {data['chapter']}.
             REVIEW SCOPE: {review_type}
-            
             STRICT OUTPUT STRUCTURE:
             1. EXECUTIVE SUMMARY: A brief overview of the quality.
-            2. DETAILED PAGE-BY-PAGE FINDINGS: 
+            2. DETAILED PAGE-BY-PAGE FINDINGS:
                - Format: [Page X]: List specific errors (factual, grammatical, or pedagogical) or improvement points.
             3. CRITICAL ERRORS TABLE: A table showing [Page #], [Current Content], [Suggested Correction].
             4. PEDAGOGICAL ALIGNMENT: How it fits SMASE and 21st Century Skills.
@@ -655,7 +646,6 @@ def generate_final_content(message):
             - Use Tables for corrections using '|' symbols.
             - LANGUAGE: {lang_rule}
             - USER SPECIAL NOTE: {data.get('tos_config', 'auto')}"""
-
         else:
             style_request = data.get('note_style', data.get('tos_config', 'FullPackage'))
             prompt = f"Professional Curriculum Expert Note Generation for Chapter {data['chapter']}... Style: {style_request}. Language: {lang_rule}..."
@@ -669,7 +659,6 @@ def generate_final_content(message):
         wait_msg = bot.send_message(chat_id, "⏳ ጥያቄዎን እያመነጨሁ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ።")
         
         cached_response, prompt_hash = get_cached_response(prompt, file_data)
-        
         if cached_response:
             bot.edit_message_text("🚀 መረጃው ከዚህ ቀደም ስለተጠየቀ ከዳታቤዝ (Cache) በፍጥነት ተገኝቷል!", chat_id, wait_msg.message_id)
             raw_content = cached_response
@@ -678,89 +667,52 @@ def generate_final_content(message):
             success = False
             current_key_index = 0
             
-            # እያንዳንዱን ቁልፍ ቢበዛ 2 ጊዜ እንዲሞክር ማድረግ
             for attempt in range(max_retries * 2):
                 try:
                     if API_KEY_LIST:
                         current_key = API_KEY_LIST[current_key_index % len(API_KEY_LIST)]
                         genai.configure(api_key=current_key)
-                        
+                    
                     model = genai.GenerativeModel('gemini-2.5-flash')
                     response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
-                    
                     raw_content = response.text.replace("###", "").replace("##", "")
-                    
-                    # የተገኘውን አዲስ መልስ ወደ ዳታቤዝ (Cache) ማስቀመጥ
                     save_to_cache(prompt_hash, raw_content)
                     success = True
-                    break 
-                    
+                    break
                 except Exception as e:
                     error_text = str(e).lower()
-                    if "429" in error_text or "quota" in error_text or "rate limit" in error_text or "400" in error_text or "503" in error_text:
+                    if "429" in error_text or "quota" in error_text or "rate limit" in error_text:
                         bot.edit_message_text(f"⚠️ ቁልፍ (Key {current_key_index + 1}) ተጨናንቋል። ወደ ሚቀጥለው እየቀየርኩ ነው...", chat_id, wait_msg.message_id)
-                        current_key_index += 1 
+                        current_key_index += 1
                         time.sleep(2)
                         continue
                     else:
                         raise Exception(f"ስህተት አጋጥሟል፦ {str(e)[:50]}")
-                        
+
             if not success:
                 raise Exception("⚠️ ይቅርታ፣ ሁሉም የ API ቁልፎች አሁን ላይ ተጨናንቀዋል። እባክዎ ከጥቂት ደቂቃዎች በኋላ ይሞክሩ።")
-        # ==============================================================
 
+        # --- ወረቀት ማዘጋጀት (Docx) ---
         doc = Document()
-        
-        if data['mode'] == "lesson":
-            # ዕለታዊ የትምህርት ዕቅድ ፎርማት
-            section = doc.sections[0]
-            section.orientation = WD_ORIENT.LANDSCAPE
-            new_width, new_height = section.page_height, section.page_width
-            section.page_width = new_width
-            section.page_height = new_height
-
-            header = doc.add_paragraph("ዕለታዊ የትምህርት ዕቅድ", style='Header')
-            header.alignment = 1
+        sections = raw_content.split("---PAGE BREAK---")
+        for section in sections:
+            clean_sec = section.strip()
+            if not clean_sec: continue
             
-            info = doc.add_paragraph()
-            info.add_run(f"የመምህሩ ስም: እስራኤል አማረ\t\t\t\tየት/ቤቱ ስም: የካ ተራራ ቅድመ አንደኛ፣ አንደኛ እና መካከለኛ ደረጃ ትምህርት ቤት\n")
-            info.add_run(f"የትም ዓይነት: {data['subject']}\t\t\t\tምዕራፍ: {data['chapter']}\n")
-            info.add_run(f"የክፍል ደረጃ: {data['grade']}\t\t\t\tየዕለቱ ገፅ: {data.get('tos_config', '')}")
-
-            # AI የመለሰውን ይዘት (ሰንጠረዡን ጨምሮ) ወደ ሰነዱ ማዛወር
-            doc.add_paragraph("\n" + raw_content)
-            
-            # ፊርማ
-            doc.add_paragraph("\nመምህር: እስራኤል አማረ _________ \t የት/ክፍል ተጠሪ: አስመራወርቅ ሀይሌ _________ \t ም/ር/መ/ር: ከበደ ተስፋዪ _________")
-        
-        else:
-            title = doc.add_heading(f"{data['subject']} - Grade {data['grade']} {data['mode'].upper()}", 0)
-            title.alignment = 1 
-
-            if data['mode'] == "review":
-                meta = doc.add_paragraph()
-                meta.add_run(f"Audit Scope: {data['review_type']}\nPages Reviewed: {data.get('page_range', 'All')}\n").bold = True
-
-            sections = raw_content.split('\n\n')
-            for section in sections:
-                clean_sec = section.strip()
-                if not clean_sec: continue
-                
-                if clean_sec.startswith("[Page") or clean_sec.startswith("Page") or ":" in clean_sec.split('\n')[0]:
-                    p = doc.add_paragraph()
-                    run = p.add_run(clean_sec)
-                    run.bold = True
-                elif "|" in clean_sec: 
-                    doc.add_paragraph(clean_sec) 
-                else:
-                    doc.add_paragraph(clean_sec)
+            if clean_sec.startswith("[Page") or clean_sec.startswith("Page") or ":" in clean_sec.split('\n')[0]:
+                p = doc.add_paragraph()
+                run = p.add_run(clean_sec)
+                run.bold = True
+            elif "|" in clean_sec: 
+                doc.add_paragraph(clean_sec) 
+            else:
+                doc.add_paragraph(clean_sec)
         
         file_stream = io.BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
         file_stream.name = f"{data['subject']}_{data['mode']}.docx"
         
-        # የቆየውን የ 'Wait' መልእክት አጥፍቶ ፋይሉን መላክ
         bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_document(chat_id, file_stream, caption=f"✅ {data['mode'].capitalize()}ው በተሳካ ሁኔታ ተዘጋጅቷል።")
 
@@ -779,11 +731,8 @@ def run_bot():
             time.sleep(2)
             bot.infinity_polling(skip_pending=True, timeout=60)
         except Exception as e:
-            print(f"❌ Bot Polling Error: {e}")
-            time.sleep(5) # ኤረር ቢመጣም ከ5 ሰከንድ በኋላ ቦቱን እንደገና እንዲያነሳው
+            time.sleep(5)
 
 if __name__ == "__main__":
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    threading.Thread(target=run_bot).start()
+    app.run(host='0.0.0.0', port=8080)
