@@ -253,7 +253,7 @@ def start(message):
     # --- አዲሱ ኮድ (ለQR ኮድ/VIP ብቻ እንዲሆን) ---
     if not is_vip:
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔑 VIP አክሰስ ይጠይቁ", url="https://t.me/israelamare2_cell")) # እዚህ ጋር የእርስዎን አካውንት ሊንክ ቢያደርጉት ይመረጣል
+        markup.add(types.InlineKeyboardButton("🔑 VIP አክሰስ ይጠይቁ", url="https://t.me/digitalmat_bot")) # እዚህ ጋር የእርስዎን አካውንት ሊንክ ቢያደርጉት ይመረጣል
         bot.send_message(chat_id, "⚠️ ይቅርታ፣ ይህ ቦት የሚያገለግለው በልዩ QR ኮድ ለሚገቡ የVIP ዳኞች ብቻ ነው።", reply_markup=markup)
         return
 
