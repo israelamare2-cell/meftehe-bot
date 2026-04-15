@@ -239,17 +239,6 @@ def start(message):
         bot.send_message(chat_id, "🚫 **ይቅርታ፣ ቦቱን ለመጠቀም መጀመሪያ የቀረበውን የQR ኮድ ስካን ማድረግ አለብዎት!**")
         return
 
-    if not is_subscribed(user_id):
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 ቻናሉን ተቀላቀል (Join)", url="https://t.me/digital_mat"))
-        markup.add(types.InlineKeyboardButton("✅ Verify", callback_data="check_subs"))
-        bot.send_message(chat_id, "⚠️ ቦቱን ለመጠቀም መጀመሪያ ቻናላችንን ይቀላቀሉ!", reply_markup=markup)
-        return
-
-    # --- የድሮው ኮድ (አባል የሆኑትን ይፈቅድ ነበር) ---
-    # if not is_subscribed(user_id) and not is_vip:
-    #     ...
-
     # --- አዲሱ ኮድ (ለQR ኮድ/VIP ብቻ እንዲሆን) ---
     if not is_vip:
         markup = types.InlineKeyboardMarkup()
