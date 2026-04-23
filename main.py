@@ -2,9 +2,6 @@ import os
 import telebot
 from telebot import types
 import google.generativeai as genai
-from docx import Document
-from docx.shared import Pt, Inches
-from docx.enum.section import WD_ORIENT
 import io
 import sqlite3
 import threading
@@ -13,18 +10,26 @@ import time
 import requests
 import random
 import hashlib
+import pypandoc  # አዲስ የተጨመረ
+
+# --- 0. PANDOC SETUP (አዲስ የተጨመረ መከላከያ) ---
+try:
+    pypandoc.get_pandoc_version()
+except (OSError, RuntimeError):
+    # ሰርቨሩ ላይ pandoc ከሌለ ራሱ ዳውንሎድ እንዲያደርግ
+    try:
+        pypandoc.download_pandoc()
+    except:
+        pass
 
 # --- 1. ኮንፊገሬሽን ---
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHANNEL_ID = "@digital_mat"
-
 GITHUB_USER = "israelamare2-cell"
 GITHUB_REPO = "meftehe-bot"
 RELEASE_TAG = "v1" 
-
 GITHUB_BASE_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/"
 
-# የ API Keys ዝግጅት (Load Balancing)
 GEMINI_API_KEYS_STR = os.getenv('GEMINI_API_KEYS', os.getenv('GEMINI_API_KEY', ''))
 API_KEY_LIST = [k.strip() for k in GEMINI_API_KEYS_STR.split(',')] if GEMINI_API_KEYS_STR else []
 
@@ -209,8 +214,6 @@ def download_book_from_github(grade, subject):
 @bot.message_handler(commands=['start'])
 def start(message):
     chat_id = message.chat.id
-    
-    # QR Code VIP Access Check
     args = message.text.split()
     is_vip = len(args) > 1 and args[1] == "vip2026"
     
@@ -241,13 +244,11 @@ def handle_callbacks(call):
         lang_code = data.split('_')[1]
         user_selection[chat_id]['lang'] = lang_code
         lang = lang_code
-        
         welcome_text = (
             f"🌟 **{STRINGS[lang]['welcome']}** 🌟\n\n"
             "መምህራንን በዘመናዊ AI በማገዝ የትምህርት ጥራትን ለማረጋገጥ የተፈጠረ ሁለገብ የዲጂታል ረዳት።\n\n"
             f"🛠 **{STRINGS[lang]['choose_mode']}**"
         )
-        
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(STRINGS[lang]['start_btn'], callback_data="mode_selection"))
         bot.edit_message_text(welcome_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
@@ -474,7 +475,8 @@ def handle_callbacks(call):
     elif data.startswith('nrbl_'):
         user_selection[chat_id]['nr_bloom'] = data.split('_')[1]
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="nrsec_1"), types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="nrsec_2"),
+        markup.add(types.InlineKeyboardButton("🔓 1 Set", callback_data="nrsec_1"), 
+                   types.InlineKeyboardButton("🛡️ 2 Sets", callback_data="nrsec_2"),
                    types.InlineKeyboardButton("🛡️ 4 Sets", callback_data="nrsec_4"))
         bot.edit_message_text("🛡️ **የክለሳ ጥያቄዎቹ የሴት ብዛት**", chat_id, call.message.message_id, reply_markup=markup)
 
@@ -572,165 +574,80 @@ def generate_final_content(message):
         if 'lang_output_option' in data:
             opt = data['lang_output_option']
             if opt == "PassageOnly":
-                lang_output_instruction = "IMPORTANT: Provide ONLY the Reading Passage based on the context. Do NOT generate any questions."
+                lang_output_instruction = "IMPORTANT: Provide ONLY the Reading Passage. No questions."
             elif opt == "QuestionOnly":
-                lang_output_instruction = "IMPORTANT: Generate ONLY the questions. Do NOT include the reading passage text itself."
+                lang_output_instruction = "IMPORTANT: Generate ONLY the questions. No passage."
             elif opt == "Both":
-                lang_output_instruction = "IMPORTANT: Provide the Reading Passage FIRST, followed by the related questions."
+                lang_output_instruction = "IMPORTANT: Provide Passage FIRST, then questions."
 
+        # --- ፕሮምፕት ዝግጅት ---
         if data['mode'] == "lesson":
             prompt = f"""You are a Professional Curriculum Developer specializing in SMASE (Active Learning).
             TASK: Create a DAILY LESSON PLAN based on Chapter: {data['chapter']} and Page: {data.get('tos_config', 'auto')}.
             STRICT REQUIREMENTS:
             1. LANGUAGE: {lang_rule}
-            2. PEDAGOGY: Follow SMASE (Active Learning). Ensure it's learner-centered.
-            3. STYLE: Use VERY SHORT BULLET POINTS. NO long sentences.
-            4. FORMAT: Use a CLEAR TABLE for the Teacher/Student activity sections.
+            2. PEDAGOGY: Follow SMASE. Learner-centered.
+            3. STYLE: Use VERY SHORT BULLET POINTS. 
+            4. FORMAT: Use Markdown for headers. Use Table for activity.
             HEADER INFO:
             - School: የካ ተራራ ቅድመ አንደኛ፣ አንደኛ እና መካከለኛ ደረጃ ትምህርት ቤት
             - Teacher: እስራኤል አማረ
-            
-            SECTIONS TO INCLUDE (Short & Precise):
-            - Objectives (አላማዎች)
-            - Significance (አስፈላጊነት)
-            - Prior Knowledge (ቀዳሚ ዕዉቀት)
-            - Competency (አጥጋቢ የመማር ብቃት)
-            
-            TABLE STRUCTURE:
-            Generate a table with these columns: [የመማር ማስተማር ቅደም ተከተል, ክፍለ ጊዜ, ይዘት, የመምህሩ ተግባር, የተማሪ ተግባር, ምዘና, የመርጃ መሣሪያ]
-            (Fill the columns with short bulleted points like: • ሰላምታ • ክለሳ • ገለጻ)
-            
-            DIFFERENTIATED SUPPORT (Short examples):
-            - For High Achievers (ላቅ ባለ ደረጃ ላሉ)
-            - For Average Students (በመካከለኛ ደረጃ ላሉ)
-            - For Low Achievers (ዝቅ ባለ ደረጃ ላሉ)
-            - Special Needs (ልዩ ፍላጎት)
+            - Subject: {data['subject']} | Grade: {data['grade']}
             """
-
         elif data['mode'] == "exam":
             prompt = f"""You are an expert Ethiopian National Examiner.
             STRICT COMPLIANCE:
-            1. SOURCE: Use ONLY the provided PDF. Focus on Chapter: {data['chapter']}, Bloom Level: {data['bloom']}, Difficulty: {data['diff']}.
-            2. USER COMMAND: Create exam structure: {data['tos_config']}. If 'auto', decide a standard structure.
-            3. LANGUAGE: {lang_rule}
-            4. SYMBOLS: ALL formulas in LaTeX using $inline$ or $$display$$.
-            5. LANGUAGE SUBJECT RULE: {lang_output_instruction}
-            6. OUTPUT: {data['num_sets']} different sets. Include TOS, Exam, and Answer Key. Page break using '---PAGE BREAK---'."""
-        
+            1. SOURCE: Use ONLY the provided PDF. Focus on Chapter: {data['chapter']}.
+            2. LANGUAGE: {lang_rule}
+            3. SYMBOLS: ALL math formulas MUST be in LaTeX ($inline$ or $$display$$).
+            4. COMMAND: {data['tos_config']}. Sets: {data['num_sets']}.
+            """
         elif data['mode'] == "review":
-            review_type = data['review_type']
-            page_range = data.get('page_range', 'specified chapters')
-            prompt = f"""You are a Precise Curriculum Auditor.
-            TASK: Conduct a PAGE-BY-PAGE Audit of the PDF for Page Range/Chapter: {page_range} / {data['chapter']}.
-            REVIEW SCOPE: {review_type}
-            
-            STRICT OUTPUT STRUCTURE:
-            1. EXECUTIVE SUMMARY: A brief overview of the quality.
-            2. DETAILED PAGE-BY-PAGE FINDINGS: 
-               - Format: [Page X]: List specific errors (factual, grammatical, or pedagogical) or improvement points.
-            3. CRITICAL ERRORS TABLE: A table showing [Page #], [Current Content], [Suggested Correction].
-            4. PEDAGOGICAL ALIGNMENT: How it fits SMASE and 21st Century Skills.
-            FORMATTING:
-            - Use Bold for Page numbers.
-            - Use Tables for corrections using '|' symbols.
-            - LANGUAGE: {lang_rule}
-            - USER SPECIAL NOTE: {data.get('tos_config', 'auto')}"""
-
+            prompt = f"Conduct a Precise Curriculum Audit for {data['subject']} Grade {data['grade']}. Scope: {data['review_type']}. Language: {lang_rule}."
         else:
-            style_request = data.get('note_style', data.get('tos_config', 'FullPackage'))
-            prompt = f"Professional Curriculum Expert Note Generation for Chapter {data['chapter']}... Style: {style_request}. Language: {lang_rule}..."
+            prompt = f"Create detailed teacher notes for Chapter {data['chapter']}. Style: {data.get('note_style', 'Full')}. Language: {lang_rule}."
 
         with open(file_path, "rb") as f:
             file_data = f.read()
 
-        wait_msg = bot.send_message(chat_id, "⏳ ጥያቄዎን እያመነጨሁ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ።")
-        
+        wait_msg = bot.send_message(chat_id, "⏳ AIው መረጃውን እያመነጨ ነው... እባክዎ ጥቂት ሰከንዶች ይጠብቁ።")
         cached_response, prompt_hash = get_cached_response(prompt, file_data)
         
         if cached_response:
-            bot.edit_message_text("🚀 መረጃው ከዚህ ቀደም ስለተጠየቀ ከዳታቤዝ (Cache) በፍጥነት ተገኝቷል!", chat_id, wait_msg.message_id)
+            bot.edit_message_text("🚀 መረጃው ከዳታቤዝ (Cache) ተገኝቷል!", chat_id, wait_msg.message_id)
             raw_content = cached_response
         else:
-            max_retries = len(API_KEY_LIST) if API_KEY_LIST else 1
             success = False
-            current_key_index = 0
-            
-            for attempt in range(max_retries * 2):
+            for attempt in range(len(API_KEY_LIST) * 2):
                 try:
-                    if API_KEY_LIST:
-                        current_key = API_KEY_LIST[current_key_index % len(API_KEY_LIST)]
-                        genai.configure(api_key=current_key)
-                        
-                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    current_key = API_KEY_LIST[attempt % len(API_KEY_LIST)]
+                    genai.configure(api_key=current_key)
+                    model = genai.GenerativeModel('gemini-1.5-flash')
                     response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
-                    
-                    raw_content = response.text.replace("###", "").replace("##", "")
+                    # የ ## እና ### ምልክቶችን በማጥፋት ጽሁፉን ማጽዳት
+                    raw_content = response.text.replace("###", "").replace("##", "").replace("**", "")
                     save_to_cache(prompt_hash, raw_content)
                     success = True
                     break 
-                    
                 except Exception as e:
-                    error_text = str(e).lower()
-                    if "429" in error_text or "quota" in error_text or "rate limit" in error_text or "400" in error_text or "503" in error_text:
-                        bot.edit_message_text(f"⚠️ ቁልፍ (Key {current_key_index + 1}) ተጨናንቋል። ወደ ሚቀጥለው እየቀየርኩ ነው...", chat_id, wait_msg.message_id)
-                        current_key_index += 1 
-                        time.sleep(2)
-                        continue
-                    else:
-                        raise Exception(f"ስህተት አጋጥሟል፦ {str(e)[:50]}")
-                        
-            if not success:
-                raise Exception("⚠️ ይቅርታ፣ ሁሉም የ API ቁልፎች አሁን ላይ ተጨናንቀዋል። እባክዎ ከጥቂት ደቂቃዎች በኋላ ይሞክሩ።")
+                    time.sleep(2)
+            if not success: raise Exception("API ተጨናንቋል።")
 
-        doc = Document()
+        # --- WORD CONVERSION USING PANDOC (አዲሱ ወሳኝ ክፍል) ---
+        bot.edit_message_text("📂 የ Word ፋይሉን እያዘጋጀሁ ነው...", chat_id, wait_msg.message_id)
         
-        if data['mode'] == "lesson":
-            section = doc.sections[0]
-            section.orientation = WD_ORIENT.LANDSCAPE
-            new_width, new_height = section.page_height, section.page_width
-            section.page_width = new_width
-            section.page_height = new_height
-
-            header = doc.add_paragraph("ዕለታዊ የትምህርት ዕቅድ")
-            header.alignment = 1
-            
-            info = doc.add_paragraph()
-            info.add_run(f"የመምህሩ ስም: እስራኤል አማረ\t\t\t\tየት/ቤቱ ስም: የካ ተራራ ቅድመ አንደኛ፣ አንደኛ እና መካከለኛ ደረጃ ትምህርት ቤት\n")
-            info.add_run(f"የትም ዓይነት: {data['subject']}\t\t\t\tምዕራፍ: {data['chapter']}\n")
-            info.add_run(f"የክፍል ደረጃ: {data['grade']}\t\t\t\tየዕለቱ ገፅ: {data.get('tos_config', '')}")
-
-            doc.add_paragraph("\n" + raw_content)
-            doc.add_paragraph("\nመምህር: እስራኤል አማረ _________ \t የት/ክፍል ተጠሪ: አስመራወርቅ ሀይሌ _________ \t ም/ር/መ/ር: ከበደ ተስፋዪ _________")
+        file_name = f"Output_{chat_id}.docx"
+        # ርዕስ መጨመር
+        formatted_md = f"# {data['subject']} - Grade {data['grade']} {data['mode'].upper()}\n\n{raw_content}"
         
-        else:
-            title = doc.add_heading(f"{data['subject']} - Grade {data['grade']} {data['mode'].upper()}", 0)
-            title.alignment = 1 
-
-            if data['mode'] == "review":
-                meta = doc.add_paragraph()
-                meta.add_run(f"Audit Scope: {data['review_type']}\nPages Reviewed: {data.get('page_range', 'All')}\n").bold = True
-
-            sections = raw_content.split('\n\n')
-            for section in sections:
-                clean_sec = section.strip()
-                if not clean_sec: continue
-                
-                if clean_sec.startswith("[Page") or clean_sec.startswith("Page") or ":" in clean_sec.split('\n')[0]:
-                    p = doc.add_paragraph()
-                    run = p.add_run(clean_sec)
-                    run.bold = True
-                elif "|" in clean_sec: 
-                    doc.add_paragraph(clean_sec) 
-                else:
-                    doc.add_paragraph(clean_sec)
+        # Pandoc በመጠቀም LaTeXን ወደ Word Equation መለወጥ
+        pypandoc.convert_text(formatted_md, 'docx', format='md', outputfile=file_name)
         
-        file_stream = io.BytesIO()
-        doc.save(file_stream)
-        file_stream.seek(0)
-        file_stream.name = f"{data['subject']}_{data['mode']}.docx"
+        with open(file_name, 'rb') as doc:
+            bot.send_document(chat_id, doc, caption=f"✅ {data['mode'].capitalize()}ው በተሳካ ሁኔታ ተዘጋጅቷል።\n\n(ማሳሰቢያ፦ የሒሳብ ምልክቶችን በትክክል ለማየት ፋይሉን በ Microsoft Word ይክፈቱት።)")
         
         bot.delete_message(chat_id, wait_msg.message_id)
-        bot.send_document(chat_id, file_stream, caption=f"✅ {data['mode'].capitalize()}ው በተሳካ ሁኔታ ተዘጋጅቷል።")
+        os.remove(file_name) # ፋይሉን ከሰርቨር ማጥፋት
 
     except Exception as e:
         bot.send_message(chat_id, f"❌ ስህተት ተፈጥሯል፦ {str(e)}")
@@ -747,7 +664,6 @@ def run_bot():
             time.sleep(2)
             bot.infinity_polling(skip_pending=True, timeout=60)
         except Exception as e:
-            print(f"❌ Bot Polling Error: {e}")
             time.sleep(5) 
 
 if __name__ == "__main__":
