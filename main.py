@@ -622,7 +622,7 @@ def generate_final_content(message):
                 try:
                     current_key = API_KEY_LIST[attempt % len(API_KEY_LIST)]
                     genai.configure(api_key=current_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    model = genai.GenerativeModel('gemini-2.5-flash')
                     response = model.generate_content([{"mime_type": "application/pdf", "data": file_data}, prompt])
                     # የ ## እና ### ምልክቶችን በማጥፋት ጽሁፉን ማጽዳት
                     raw_content = response.text.replace("###", "").replace("##", "").replace("**", "")
