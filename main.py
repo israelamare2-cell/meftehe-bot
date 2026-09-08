@@ -219,7 +219,7 @@ def start(message):
     
     if not is_vip:
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔑 VIP አክሰስ ይጠይቁ", url="https://t.me/DigitalMat_bot"))
+        markup.add(types.InlineKeyboardButton("🔑 VIP አክሰስ ይጠይቁ", url="https://t.me/sol_vere"))
         bot.send_message(chat_id, "⚠️ ይቅርታ፣ ይህ ቦት የሚያገለግለው በልዩ QR ኮድ ለሚገቡ የተፈቀደላቸው መምህራን/ዳኞች ብቻ ነው።", reply_markup=markup)
         return
 
